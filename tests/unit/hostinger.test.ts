@@ -117,6 +117,22 @@ describe("Supabase pool contract", () => {
       }),
     ).toThrow();
   });
+  it("accepts trusted CA in single-line Base64 without disabling certificate verification", () => {
+    const ca = "-----BEGIN CERTIFICATE-----\\nZml4dHVyZQ==\\n-----END CERTIFICATE-----\\n".replace(/\\n/g, "\n");
+    const encoded = Buffer.from(ca, "utf8").toString("base64");
+    const options = databasePoolOptions(url, {
+      NODE_ENV: "production",
+      DB_CONNECTION_MODE: "session",
+      DB_CA_CERT_BASE64: encoded,
+    });
+    expect(options.ssl).toEqual({ rejectUnauthorized: true, ca });
+    expect(() =>
+      databasePoolOptions(url, { DB_CA_CERT_BASE64: "not-a-certificate" }),
+    ).toThrow();
+    expect(() =>
+      databasePoolOptions(url, { DB_CA_CERT_BASE64: encoded, DB_CA_CERT: ca }),
+    ).toThrow();
+  });
   it("does not let URL options override certificate verification", () => {
     const c = databasePoolOptions(url + "?sslmode=require", {
       DB_SSL_MODE: "require",
