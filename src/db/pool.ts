@@ -35,6 +35,23 @@ export function databasePoolOptions(
   const max = Number(env.DB_POOL_MAX ?? 5);
   if (!Number.isInteger(max) || max < 4 || max > 10)
     throw new Error("DB_POOL_MAX must be between 4 and 10.");
+  // Hostinger environment fields may not preserve multiline PEM. Allow an
+  // optional Base64-encoded Supabase CA certificate without disabling TLS verification.
+  const caBase64 = env.DB_CA_CERT_BASE64?.trim();
+  const directCa = env.DB_CA_CERT;
+  if (caBase64 && directCa)
+    throw new Error("Set only one of DB_CA_CERT or DB_CA_CERT_BASE64.");
+  let ca = directCa;
+  if (caBase64) {
+    if (
+      caBase64.length > 32768 ||
+      !/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(caBase64)
+    )
+      throw new Error("Invalid DB_CA_CERT_BASE64 encoding.");
+    ca = Buffer.from(caBase64, "base64").toString("utf8");
+  }
+  if (ca && (!ca.includes("-----BEGIN CERTIFICATE-----") || !ca.includes("-----END CERTIFICATE-----")))
+    throw new Error("Database CA must contain a PEM certificate.");
   return {
     connectionString: url.toString(),
     max,
@@ -47,7 +64,7 @@ export function databasePoolOptions(
       sslMode === "require"
         ? {
             rejectUnauthorized: true,
-            ...(env.DB_CA_CERT ? { ca: env.DB_CA_CERT } : {}),
+            ...(ca ? { ca } : {}),
           }
         : false,
     application_name: "timonconfigs-membership-backend",
