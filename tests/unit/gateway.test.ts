@@ -170,6 +170,7 @@ describe("Gateway connection lifecycle using an injected socket only", () => {
         d: { ...ready.d, guilds: [{ id: live.DISCORD_GUILD_ID }] },
       });
       await vi.advanceTimersByTimeAsync(0);
+      expect(gateway.connected).toBe(true);
       sockets[0]!.emit({ op: 7, d: null });
       await vi.advanceTimersByTimeAsync(6000);
       expect(sockets).toHaveLength(2);
@@ -180,6 +181,7 @@ describe("Gateway connection lifecycle using an injected socket only", () => {
         seq: 1,
       });
       gateway.stop();
+      expect(gateway.connected).toBe(false);
       await running;
     } finally {
       gateway.stop();
@@ -193,17 +195,15 @@ describe("Gateway identify budget", () => {
     const { checkGatewaySessionBudget } =
       await import("../../src/discord/gateway.js");
     const transport = {
-      request: vi
-        .fn()
-        .mockResolvedValue(
-          Response.json({
-            session_start_limit: {
-              remaining: 0,
-              reset_after: 60000,
-              max_concurrency: 1,
-            },
-          }),
-        ),
+      request: vi.fn().mockResolvedValue(
+        Response.json({
+          session_start_limit: {
+            remaining: 0,
+            reset_after: 60000,
+            max_concurrency: 1,
+          },
+        }),
+      ),
     };
     await expect(
       checkGatewaySessionBudget(transport, "fixture"),

@@ -64,3 +64,7 @@ Funkcje cheat/exploit mogą być niedozwolone przez operatorów płatności i za
 ## Rozszerzenie Discord: Rules Screening i kontrolowany test-guild
 
 Nowsza implementacja na gałęzi `feature/discord-completion` dodaje trwałą weryfikację członków, Gateway oraz opcjonalne operacje na osobnym, zatwierdzonym serwerze testowym. Domyślne ustawienia pozostają offline/DRY_RUN; produkcja i rzeczywiste płatności są zablokowane. Warunki, ręczna konfiguracja i ograniczenia: [DISCORD_COMPLETION_PL.md](docs/DISCORD_COMPLETION_PL.md). Szablon konfiguracji: `.env.test-guild.example`.
+
+## Przygotowanie Hostinger Business
+
+Gałąź `deploy/hostinger-business` dodaje `npm run start:hostinger` (API + nadzorowane tło w jednym procesie), TLS/session pooling PostgreSQL i ograniczony `npm run discord:cron`. Wymagania, szablon zmiennych i etapy zgody: [HOSTINGER_BUSINESS_PL.md](docs/HOSTINGER_BUSINESS_PL.md). Nie potwierdzono ciągłej pracy Gateway na rzeczywistym hostingu i nie wykonano wdrożenia. Produkcyjne VIP i mock płatności pozostają zablokowane; przyszłe nadawanie Free Member wymaga osobnej zgody.

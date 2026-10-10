@@ -93,6 +93,7 @@ export class MemberGatewaySession {
 
 /** No connection is made by constructing this class. run() is gated to an explicitly approved test guild. */
 export class DiscordMemberGateway {
+  public connected = false;
   private stopping = false;
   private socket: WebSocket | undefined;
   private readonly controller = new AbortController();
@@ -117,6 +118,7 @@ export class DiscordMemberGateway {
     this.session = new MemberGatewaySession(config, verification);
   }
   public stop(): void {
+    this.connected = false;
     this.stopping = true;
     this.controller.abort();
     this.socket?.close(1000);
@@ -252,7 +254,11 @@ export class DiscordMemberGateway {
             else if (frame.op === 9) {
               if (frame.d !== true) this.session.reset();
               socket.close(4000);
-            } else if (frame.op === 0) await this.session.dispatch(frame);
+            } else if (frame.op === 0) {
+              await this.session.dispatch(frame);
+              if (frame.t === "READY" || frame.t === "RESUMED")
+                this.connected = true;
+            }
           })
           .finally(() => {
             backlog--;
@@ -270,6 +276,7 @@ export class DiscordMemberGateway {
         socket.close(4000);
       });
       socket.addEventListener("close", (event) => {
+        this.connected = false;
         clearTimeout(helloTimeout);
         if (heartbeat) clearTimeout(heartbeat);
         if ([4007, 4009].includes(event.code)) this.session.reset();

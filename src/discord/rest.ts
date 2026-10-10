@@ -25,19 +25,32 @@ export class DisabledDiscordTransport implements HttpTransport {
 
 export function assertTestGuildNetwork(config: DiscordConfig): void {
   if (
-    config.DISCORD_ENVIRONMENT !== "test-guild" ||
+    !["test-guild", "production"].includes(config.DISCORD_ENVIRONMENT) ||
     !config.DISCORD_OWNER_APPROVED ||
     !config.DISCORD_APPROVAL_REFERENCE ||
     !config.DISCORD_NETWORK_ENABLED ||
-    config.DISCORD_TEST_GUILD_ID !== config.DISCORD_GUILD_ID ||
+    (config.DISCORD_ENVIRONMENT === "test-guild"
+      ? config.DISCORD_TEST_GUILD_ID
+      : config.DISCORD_PRODUCTION_GUILD_ID) !== config.DISCORD_GUILD_ID ||
     !config.DISCORD_GUILD_OWNER_ID
   )
     throw new DiscordFailure("PRODUCTION_CONNECTION_NOT_APPROVED");
 }
-export function assertTestGuildWrites(config: DiscordConfig): void {
+export function assertTestGuildWrites(
+  config: DiscordConfig,
+  roleId?: string,
+): void {
   assertTestGuildNetwork(config);
   if (config.DISCORD_DRY_RUN || !config.DISCORD_WRITES_ENABLED)
     throw new DiscordFailure("LIVE_MUTATIONS_NOT_APPROVED");
+  if (
+    config.DISCORD_ENVIRONMENT === "production" &&
+    (roleId !== config.DISCORD_FREE_MEMBER_ROLE_ID ||
+      !config.DISCORD_FREE_MEMBER_WRITES_APPROVED ||
+      !config.DISCORD_FREE_MEMBER_APPROVAL_REFERENCE ||
+      !config.DISCORD_VERIFICATION_ENABLED)
+  )
+    throw new DiscordFailure("PRODUCTION_VIP_MUTATIONS_DISABLED");
 }
 const memberSchema = z.object({
   user: z.object({ id: snowflake, bot: z.boolean().optional() }),
@@ -188,7 +201,7 @@ export class RestDiscordAdapter implements DiscordAdapter {
     assertRole(this.config, roleId);
     snowflake.parse(memberId);
     try {
-      assertTestGuildWrites(this.config);
+      assertTestGuildWrites(this.config, roleId);
     } catch {
       throw new DiscordFailure("LIVE_MUTATIONS_NOT_APPROVED");
     }

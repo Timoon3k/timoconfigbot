@@ -11,8 +11,18 @@ const flag = (value: "true" | "false") =>
     .transform((item) => item === "true");
 const schema = z
   .object({
-    DISCORD_ENVIRONMENT: z.enum(["offline", "test-guild"]).default("offline"),
+    DISCORD_ENVIRONMENT: z
+      .enum(["offline", "test-guild", "production"])
+      .default("offline"),
     DISCORD_TEST_GUILD_ID: snowflake.optional(),
+    DISCORD_PRODUCTION_GUILD_ID: snowflake.optional(),
+    DISCORD_FREE_MEMBER_WRITES_APPROVED: flag("false"),
+    DISCORD_FREE_MEMBER_APPROVAL_REFERENCE: z
+      .string()
+      .min(8)
+      .max(200)
+      .optional(),
+    DISCORD_PRODUCTION_VIP_WRITES_ENABLED: flag("false"),
     DISCORD_GUILD_OWNER_ID: snowflake.optional(),
     DISCORD_OWNER_APPROVED: flag("false"),
     DISCORD_APPROVAL_REFERENCE: z.string().min(8).max(200).optional(),
@@ -138,6 +148,34 @@ const schema = z
         message:
           "Test guild requires explicit owner approval, owner identity and matching test guild ID.",
       });
+    if (
+      config.DISCORD_ENVIRONMENT === "production" &&
+      (!config.DISCORD_OWNER_APPROVED ||
+        !config.DISCORD_APPROVAL_REFERENCE ||
+        !config.DISCORD_GUILD_OWNER_ID ||
+        config.DISCORD_PRODUCTION_GUILD_ID !== config.DISCORD_GUILD_ID ||
+        config.DISCORD_TEST_GUILD_ID ||
+        config.DISCORD_GUILD_ID === "100000000000000001" ||
+        config.DISCORD_ADAPTER !== "rest" ||
+        !config.DISCORD_NETWORK_ENABLED ||
+        config.DISCORD_PRODUCTION_VIP_WRITES_ENABLED ||
+        config.DISCORD_VIP_SYNC_ENABLED ||
+        config.DISCORD_COMMANDS_ENABLED ||
+        config.DISCORD_OAUTH_REDIRECT_URI !==
+          "https://bot.timonconfigs.com/api/discord/callback" ||
+        !config.DISCORD_INTERACTIONS_PUBLIC_KEY ||
+        (config.DISCORD_WRITES_ENABLED &&
+          (!config.DISCORD_VERIFICATION_ENABLED ||
+            !config.DISCORD_FREE_MEMBER_WRITES_APPROVED ||
+            !config.DISCORD_FREE_MEMBER_APPROVAL_REFERENCE ||
+            config.DISCORD_FREE_MEMBER_APPROVAL_REFERENCE ===
+              config.DISCORD_APPROVAL_REFERENCE)))
+    )
+      ctx.addIssue({
+        code: "custom",
+        message:
+          "Production requires exact guild/owner approval, HTTPS identity, disabled VIP/command writes and separate Free Member approval.",
+      });
     if (config.DISCORD_WRITES_ENABLED === config.DISCORD_DRY_RUN)
       ctx.addIssue({
         code: "custom",
@@ -154,16 +192,24 @@ export type DiscordConfig = z.infer<typeof schema>;
 export function loadDiscordConfig(
   env: NodeJS.ProcessEnv = process.env,
 ): DiscordConfig {
-  if (env.NODE_ENV === "production")
+  if (env.NODE_ENV === "production" && env.DISCORD_ENVIRONMENT !== "production")
     throw new Error(
-      "Production Discord activation is not supported by this release.",
+      "NODE_ENV production requires the explicit production Discord configuration.",
     );
   const normalized = { ...env };
   for (const key of [
     "DISCORD_TEST_GUILD_ID",
+    "DISCORD_PRODUCTION_GUILD_ID",
+    "DISCORD_FREE_MEMBER_APPROVAL_REFERENCE",
     "DISCORD_GUILD_OWNER_ID",
     "DISCORD_APPROVAL_REFERENCE",
   ])
     if (normalized[key] === "") delete normalized[key];
-  return schema.parse(normalized);
+  const config = schema.parse(normalized);
+  if (
+    config.DISCORD_ENVIRONMENT === "production" &&
+    env.NODE_ENV !== "production"
+  )
+    throw new Error("Production Discord requires NODE_ENV=production.");
+  return config;
 }

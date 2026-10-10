@@ -98,3 +98,15 @@ Statusy: `[x]` wykonane i zweryfikowane, `[ ]` do wykonania, `[!]` zewnętrzna b
 - [ ] Właściciel: zaakceptować połączenie i osobno zmiany na kontrolowanym serwerze testowym.
 - [ ] Wykonać rzeczywisty test na dwóch kontrolowanych kontach Discord; w tej sesji nie wykonywano połączenia.
 - [x] Walidacja rozszerzenia: 108/108 testów, lint, typecheck, build, katalog produktów i smoke skompilowanych procesów; PostgreSQL 16 z migracjami 001–003.
+
+## Przygotowanie Hostinger Business
+
+- [x] Jednoprocesowy entry point API + nadzorowany worker/Gateway i sesyjny lider PostgreSQL.
+- [x] TLS z weryfikacją certyfikatu, ograniczona pula i odrzucenie transaction pooling.
+- [x] Oddzielny tryb production: read-only/DRY_RUN, brak produkcyjnych mock entitlements/VIP writes.
+- [x] Osobna bramka zatwierdzenia wyłącznie Free Member i ograniczony cron bez Gateway.
+- [x] Szablon hPanel i instrukcje Supabase/DNS/OAuth/Discord Developer Portal.
+- [ ] Potwierdzić rzeczywiste limity i ciągłość procesu Hostinger lub dostępność bounded cron.
+- [ ] Właściciel: zaakceptować wdrożenie, podać bezpiecznie konfigurację, przeprowadzić migrację i test Supabase.
+- [ ] Właściciel: etap odczytu oraz osobna zgoda na nadawanie Free Member; VIP pozostają zablokowane.
+- [x] 126/126 testów; zweryfikowany lokalny TLS, rzeczywiste przerwanie sesji PostgreSQL, lint/typecheck/build i oba smoke; bez Discord/Hostinger/Supabase online.

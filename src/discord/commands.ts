@@ -75,7 +75,7 @@ export class DiscordCommands {
             [account.user_id],
           )
         ).rows[0];
-        content = `Account linked. Latest synchronization job: ${job?.status ?? "not requested"}. ${this.config.DISCORD_DRY_RUN ? "Dry-run mode; changes are previews." : "Controlled test guild mode."}`;
+        content = `Account linked. Latest synchronization job: ${job?.status ?? "not requested"}. ${this.config.DISCORD_DRY_RUN ? "Dry-run mode; changes are previews." : this.config.DISCORD_ENVIRONMENT === "production" ? "Production VIP synchronization is disabled." : "Controlled test guild mode."}`;
       } else content = "Unknown command. Use /help.";
     }
     return {

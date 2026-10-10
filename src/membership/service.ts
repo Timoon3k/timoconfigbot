@@ -27,7 +27,11 @@ function errorFields(error: unknown): { code: string; message: string } {
 }
 
 export class MembershipService {
-  public constructor(public readonly pool: DatabasePool) {}
+  public constructor(public readonly pool: DatabasePool, private readonly allowMockPayments = true) {}
+
+  private assertMockAllowed(): void {
+    if (!this.allowMockPayments) throw new DomainError("MOCK_PAYMENTS_DISABLED", "Mock payments cannot be processed in production.");
+  }
 
   public async createOrder(input: {
     userId: string;
@@ -35,6 +39,7 @@ export class MembershipService {
     providerOrderId: string;
     idempotencyKey: string;
   }): Promise<string> {
+    this.assertMockAllowed();
     const spec = PRODUCT_SPEC[input.productCode];
     return inTransaction(this.pool, async (client) => {
       const result = await client.query<{ id: string }>(
@@ -56,6 +61,7 @@ export class MembershipService {
   }
 
   public async createSubscription(input: { userId: string; providerSubscriptionId: string }): Promise<string> {
+    this.assertMockAllowed();
     try {
       return await inTransaction(this.pool, async (client) => {
         const result = await client.query<{ id: string }>(
@@ -81,6 +87,7 @@ export class MembershipService {
   }
 
   public async processVerifiedEvent(rawEvent: unknown): Promise<ProcessResult> {
+    this.assertMockAllowed();
     const event = verifiedPaymentEventSchema.parse(rawEvent);
     const hash = payloadHash(event);
     try {
@@ -297,6 +304,8 @@ export class MembershipService {
   }
 
   public async activeTierWith(client: DatabaseClient, userId: string, at: Date): Promise<EntitlementTier> {
+    // Only the mock provider exists today; no production payment provenance has been approved.
+    if (!this.allowMockPayments) return 'FREE';
     const result = await client.query<{ tier: 'VIP_MONTHLY' | 'VIP_LIFETIME' }>(
       `SELECT tier FROM membership_entitlements
        WHERE user_id = $1 AND valid_from <= $2 AND (valid_until IS NULL OR valid_until > $2)

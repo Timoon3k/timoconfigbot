@@ -24,7 +24,7 @@ export function verifyGuild(config: DiscordConfig, guild: GuildState): void {
   if (
     guild.id !== config.DISCORD_GUILD_ID ||
     guild.bot.id !== config.DISCORD_CLIENT_ID ||
-    (config.DISCORD_ENVIRONMENT === "test-guild" &&
+    (config.DISCORD_ENVIRONMENT !== "offline" &&
       guild.ownerId !== config.DISCORD_GUILD_OWNER_ID)
   )
     throw new DiscordFailure("GUILD_IDENTITY_MISMATCH");

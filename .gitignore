@@ -7,3 +7,4 @@ coverage/
 .env.*
 !.env.example
 !.env.test-guild.example
+!.env.hostinger.example

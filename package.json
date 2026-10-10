@@ -11,7 +11,7 @@
     "typecheck": "tsc --noEmit",
     "db:migrate": "tsx src/db/cli.ts up",
     "db:rollback": "tsx src/db/cli.ts down",
-    "start": "node dist/server.js",
+    "start": "node dist/hostinger.js",
     "dev": "tsx watch src/server.ts",
     "discord:worker": "tsx src/discord/worker-cli.ts",
     "discord:worker:built": "node dist/discord/worker-cli.js",
@@ -23,7 +23,12 @@
     "test:unit": "vitest run tests/unit",
     "test:integration": "vitest run tests/integration --no-file-parallelism",
     "test": "npm run test:legacy && npm run test:unit && npm run test:integration",
-    "discord:commands": "tsx src/discord/register-commands-cli.ts"
+    "discord:commands": "tsx src/discord/register-commands-cli.ts",
+    "start:hostinger": "node dist/hostinger.js",
+    "discord:cron": "node dist/discord/cron-cli.js",
+    "db:migrate:built": "node dist/db/cli.js up",
+    "test:hostinger-smoke": "node scripts/smoke-hostinger.mjs",
+    "start:api": "node dist/server.js"
   },
   "engines": {
     "node": ">=22.13.0"

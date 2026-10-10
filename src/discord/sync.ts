@@ -92,6 +92,8 @@ export class DiscordSyncService {
           [userId, now],
         )
       : { rows: [] };
+    if (this.config.DISCORD_ENVIRONMENT === "production")
+      policyError = "PRODUCTION_VIP_MUTATIONS_DISABLED";
     const diff = roleDiff(this.config, member.roles, tier);
     await new RoleOperations(
       this.pool,
@@ -99,7 +101,7 @@ export class DiscordSyncService {
       this.adapter,
     ).recoverOwnership(db, userId, id, member.roles);
     if (
-      this.config.DISCORD_ENVIRONMENT === "test-guild" &&
+      this.config.DISCORD_ENVIRONMENT !== "offline" &&
       diff.add.length &&
       member.pending !== false
     )
@@ -237,7 +239,9 @@ export class DiscordSyncService {
               job.correlation_id,
             );
         }
-        const live = !this.config.DISCORD_DRY_RUN;
+        const live =
+          !this.config.DISCORD_DRY_RUN &&
+          this.config.DISCORD_ENVIRONMENT !== "production";
         if (preview?.permitted && live) {
           const operations = new RoleOperations(
             this.pool,
@@ -521,8 +525,8 @@ export class DiscordSyncService {
         this.config.DISCORD_ENVIRONMENT === "offline"
           ? "offline-dry-run"
           : this.config.DISCORD_DRY_RUN
-            ? "test-guild-dry-run"
-            : "test-guild",
+            ? `${this.config.DISCORD_ENVIRONMENT}-dry-run`
+            : this.config.DISCORD_ENVIRONMENT,
     };
   }
 }

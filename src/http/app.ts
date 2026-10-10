@@ -25,6 +25,7 @@ export function buildApp(dependencies: {
   auth: AuthService;
   memberships: MembershipService;
   production: boolean;
+  readiness?: () => Promise<{ ready: boolean; state: string; gateway: string }>;
   discord?: { sync: DiscordSyncService; links: DiscordLinkService };
 }): FastifyInstance {
   const app = Fastify({
@@ -52,62 +53,57 @@ export function buildApp(dependencies: {
 
   app.setErrorHandler((error, _request, reply) => {
     if (error instanceof DiscordFailure)
-      return reply
-        .code(error.retryable ? 503 : 409)
-        .send({
-          error: {
-            code: error.code,
-            message: "Discord operation could not be completed safely.",
-          },
-        });
+      return reply.code(error.retryable ? 503 : 409).send({
+        error: {
+          code: error.code,
+          message: "Discord operation could not be completed safely.",
+        },
+      });
     if (
       error &&
       typeof error === "object" &&
       "statusCode" in error &&
       error.statusCode === 429
     )
-      return reply
-        .code(429)
-        .send({
-          error: { code: "RATE_LIMITED", message: "Too many requests." },
-        });
+      return reply.code(429).send({
+        error: { code: "RATE_LIMITED", message: "Too many requests." },
+      });
     if (error instanceof AppError) {
-      return reply
-        .status(error.statusCode)
-        .send({
-          error: {
-            code: error.code,
-            message: error.message,
-            details: error.details,
-          },
-        });
-    }
-    if (error instanceof z.ZodError) {
-      return reply
-        .status(400)
-        .send({
-          error: {
-            code: "VALIDATION_ERROR",
-            message: "Request validation failed.",
-            details: error.flatten(),
-          },
-        });
-    }
-    app.log.error(error);
-    return reply
-      .status(500)
-      .send({
+      return reply.status(error.statusCode).send({
         error: {
-          code: "INTERNAL_ERROR",
-          message: "An internal error occurred.",
+          code: error.code,
+          message: error.message,
+          details: error.details,
         },
       });
+    }
+    if (error instanceof z.ZodError) {
+      return reply.status(400).send({
+        error: {
+          code: "VALIDATION_ERROR",
+          message: "Request validation failed.",
+          details: error.flatten(),
+        },
+      });
+    }
+    app.log.error(error);
+    return reply.status(500).send({
+      error: {
+        code: "INTERNAL_ERROR",
+        message: "An internal error occurred.",
+      },
+    });
   });
 
   app.get("/health", async () => ({
     status: "ok",
-    payments: "sandbox-only",
-    discord: "dry-run",
+    payments: dependencies.production ? "disabled" : "sandbox-only",
+    discord:
+      dependencies.discord?.sync.config.DISCORD_DRY_RUN === false
+        ? dependencies.discord.sync.config.DISCORD_ENVIRONMENT === "production"
+          ? "free-member-only"
+          : "test-guild"
+        : "dry-run",
   }));
 
   app.post(
@@ -184,6 +180,7 @@ export function buildApp(dependencies: {
       dependencies.auth,
       dependencies.discord.sync,
       dependencies.discord.links,
+      dependencies.readiness,
     );
   return app;
 }

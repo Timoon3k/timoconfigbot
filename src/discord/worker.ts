@@ -4,6 +4,7 @@ import type { MemberVerification } from "./verification.js";
 import type { DiscordSyncService } from "./sync.js";
 
 export class DiscordWorker {
+  public lastCompletedAt: number | null = null;
   private stopping = false;
   private readonly controller = new AbortController();
   public readonly id = randomUUID();
@@ -19,7 +20,7 @@ export class DiscordWorker {
     await this.sync.pool.query(
       `INSERT INTO discord_runtime(name,heartbeat_at) VALUES($1,now())
       ON CONFLICT(name) DO UPDATE SET heartbeat_at=now()`,
-      [`worker:${this.id}`],
+      [`worker:${this.sync.config.DISCORD_GUILD_ID}:${this.id}`],
     );
     await this.sync.reconcileBatch();
     await this.verification?.reconcileBatch();
@@ -32,13 +33,14 @@ export class DiscordWorker {
     ) {
       await this.sync.pool.query(
         "UPDATE discord_runtime SET heartbeat_at=now() WHERE name=$1",
-        [`worker:${this.id}`],
+        [`worker:${this.sync.config.DISCORD_GUILD_ID}:${this.id}`],
       );
       const verified = (await this.verification?.runOne()) ?? false;
       const synced = await this.sync.runOne(this.id);
       if (!verified && !synced) break;
       count += Number(verified) + Number(synced);
     }
+    this.lastCompletedAt = Date.now();
     return count;
   }
   public async run(): Promise<void> {
@@ -69,7 +71,7 @@ export class DiscordWorker {
       }
     } finally {
       await this.sync.pool.query("DELETE FROM discord_runtime WHERE name=$1", [
-        `worker:${this.id}`,
+        `worker:${this.sync.config.DISCORD_GUILD_ID}:${this.id}`,
       ]);
     }
   }

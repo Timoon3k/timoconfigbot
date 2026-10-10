@@ -26,10 +26,6 @@ export function createDiscordRuntime(
   env: NodeJS.ProcessEnv = process.env,
 ) {
   const config = loadDiscordConfig(env);
-  if (env.NODE_ENV === "production")
-    throw new Error(
-      "Offline Discord mock cannot be deployed as production. A separately approved activation release is required.",
-    );
   const transport = new ApprovedDiscordHttpsTransport(
     config,
     new PostgresDiscordRateGate(
@@ -39,7 +35,7 @@ export function createDiscordRuntime(
     ),
   );
   if (
-    config.DISCORD_ENVIRONMENT === "test-guild" &&
+    config.DISCORD_ENVIRONMENT !== "offline" &&
     (!env.DISCORD_BOT_TOKEN || !env.DISCORD_CLIENT_SECRET)
   )
     throw new DiscordFailure("TEST_GUILD_CREDENTIALS_MISSING");

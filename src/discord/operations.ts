@@ -22,7 +22,7 @@ export class RoleOperations {
     operation: "add" | "remove",
     userId: string | null,
   ): Promise<void> {
-    assertTestGuildWrites(this.config);
+    assertTestGuildWrites(this.config, roleId);
     assertRole(this.config, roleId);
     if (this.adapter.kind !== "rest")
       throw new DiscordFailure("LIVE_ADAPTER_REQUIRED");
@@ -57,7 +57,9 @@ export class RoleOperations {
           roleId,
           userId,
           operation,
-          this.config.DISCORD_APPROVAL_REFERENCE,
+          this.config.DISCORD_ENVIRONMENT === "production"
+            ? this.config.DISCORD_FREE_MEMBER_APPROVAL_REFERENCE
+            : this.config.DISCORD_APPROVAL_REFERENCE,
         ],
       );
       await discordAudit(journal, "DISCORD_ROLE_EXECUTION_INTENT", userId, {
@@ -65,7 +67,7 @@ export class RoleOperations {
         memberId,
         roleId,
         operation,
-        mode: "test-guild",
+        mode: this.config.DISCORD_ENVIRONMENT,
       });
     });
     try {

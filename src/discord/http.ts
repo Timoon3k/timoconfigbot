@@ -32,13 +32,17 @@ export function registerDiscordRoutes(
   auth: AuthService,
   sync: DiscordSyncService,
   links: DiscordLinkService,
+  readiness?: () => Promise<{ ready: boolean; state: string; gateway: string }>,
 ): void {
   if (sync.config.DISCORD_INTERACTIONS_PUBLIC_KEY)
     registerInteractionEndpoint(
       app,
       new DiscordCommands(
         sync.pool,
-        new MembershipService(sync.pool),
+        new MembershipService(
+          sync.pool,
+          sync.config.DISCORD_ENVIRONMENT !== "production",
+        ),
         sync.config,
       ),
       sync.config.DISCORD_INTERACTIONS_PUBLIC_KEY,
@@ -367,6 +371,12 @@ export function registerDiscordRoutes(
   app.get("/ready", async (_request, reply) => {
     try {
       await sync.pool.query("SELECT 1 FROM discord_runtime LIMIT 1");
+      if (readiness) {
+        const status = await readiness();
+        return reply
+          .code(status.ready ? 200 : 503)
+          .send({ ...status, database: "ok" });
+      }
       const worker = (
         await sync.pool.query<{
           alive: boolean;
@@ -381,8 +391,8 @@ export function registerDiscordRoutes(
           sync.config.DISCORD_ENVIRONMENT === "offline"
             ? "offline-dry-run"
             : sync.config.DISCORD_DRY_RUN
-              ? "test-guild-dry-run"
-              : "test-guild",
+              ? `${sync.config.DISCORD_ENVIRONMENT}-dry-run`
+              : sync.config.DISCORD_ENVIRONMENT,
       };
     } catch {
       return reply.code(503).send({ database: "unavailable" });

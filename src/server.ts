@@ -15,7 +15,7 @@ const auth = new AuthService(
   config.PASSWORD_PEPPER,
   config.SESSION_PEPPER,
 );
-const memberships = new MembershipService(pool);
+const memberships = new MembershipService(pool,config.NODE_ENV !== "production");
 const discord = createDiscordRuntime(
   pool,
   auth,

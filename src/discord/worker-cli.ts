@@ -15,7 +15,7 @@ const auth = new AuthService(
 const { sync, verification, gateway } = createDiscordRuntime(
   pool,
   auth,
-  new MembershipService(pool),
+  new MembershipService(pool,config.NODE_ENV !== "production"),
   config.SESSION_PEPPER,
 );
 const worker = new DiscordWorker(sync, verification);

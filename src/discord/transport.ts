@@ -2,7 +2,11 @@ import { setTimeout as delay } from "node:timers/promises";
 import type { DatabasePool } from "../db/pool.js";
 import { inTransaction } from "../db/pool.js";
 import type { DiscordConfig } from "./config.js";
-import { assertTestGuildNetwork, type HttpTransport } from "./rest.js";
+import {
+  assertTestGuildNetwork,
+  assertTestGuildWrites,
+  type HttpTransport,
+} from "./rest.js";
 import { DiscordFailure } from "./types.js";
 import { assertRole } from "./policy.js";
 
@@ -89,7 +93,15 @@ export class ApprovedDiscordHttpsTransport implements HttpTransport {
         (!role || !["PUT", "DELETE"].includes(init.method))
       )
         throw new DiscordFailure("DISCORD_ROUTE_NOT_ALLOWED");
-      if (role) assertRole(this.config, role);
+      if (role) {
+        assertRole(this.config, role);
+        assertTestGuildWrites(this.config, role);
+        if (
+          init.method === "DELETE" &&
+          role === this.config.DISCORD_FREE_MEMBER_ROLE_ID
+        )
+          throw new DiscordFailure("FREE_MEMBER_REMOVAL_FORBIDDEN");
+      } else assertTestGuildWrites(this.config);
     }
     await delay(await this.gate.reserve());
     let response: Response;
