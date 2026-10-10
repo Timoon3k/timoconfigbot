@@ -88,26 +88,58 @@ process.once("SIGINT", () => {
 process.once("SIGTERM", () => {
   void stop();
 });
-// Hostinger's managed loader uses require() for the configured entry file.
-// Keep the ESM entry graph synchronous; start asynchronous work in a function
-// rather than using top-level await, which causes ERR_REQUIRE_ASYNC_MODULE.
+// Hostinger's managed loader uses require() and expects HTTP listen within ~3 seconds.
+// No top-level await and no database or Discord network work before app.listen().
+function safeErrorCode(error: unknown): string {
+  const code = error instanceof Error && "code" in error
+    ? (error as Error & { code?: unknown }).code
+    : undefined;
+  return typeof code === "string" && /^[a-zA-Z0-9_]{1,48}$/.test(code)
+    ? code : "UNKNOWN";
+}
+
+async function startBackgroundWhenDatabaseReady(): Promise<void> {
+  let previousError = "";
+  while (!shutdown) {
+    try {
+      // Never enable Discord worker until migrations and DB connectivity are confirmed.
+      await pool.query("SELECT 1 FROM discord_member_jobs LIMIT 1");
+      process.stderr.write(JSON.stringify({ event: "hosted_database_ready" }) + "\n");
+      if (mode === "continuous") {
+        background = supervisor.run().catch(() => {
+          process.stderr.write(JSON.stringify({ event: "background_fatal" }) + "\n");
+          process.exitCode = 1;
+          void stop();
+        });
+      }
+      return;
+    } catch (error) {
+      const code = safeErrorCode(error);
+      // Log error codes, not connection strings or exception messages, which may contain secrets.
+      if (code !== previousError) {
+        process.stderr.write(JSON.stringify({
+          event: "hosted_database_unready",
+          code,
+          action: "check_supabase_connection_tls_and_migrations",
+        }) + "\n");
+        previousError = code;
+      }
+      // Keep the HTTP process alive for diagnostics, but fail readiness and never start role workers.
+      await new Promise<void>((resolve) => setTimeout(resolve, 15000));
+    }
+  }
+}
+
 async function startHostinger(): Promise<void> {
   try {
-    // Migrations are an explicit release step, never an automatic production startup side effect.
-    await pool.query("SELECT 1 FROM discord_member_jobs LIMIT 1");
     await app.listen({ host: process.env.HOST ?? "0.0.0.0", port: config.PORT });
-    if (mode === "continuous")
-      background = supervisor.run().catch(() => {
-        process.stderr.write(
-          JSON.stringify({ event: "background_fatal" }) + "\n",
-        );
-        process.exitCode = 1;
-        void stop();
-      });
-  } catch {
-    process.stderr.write(
-      JSON.stringify({ event: "hosted_startup_failed" }) + "\n",
-    );
+    process.stderr.write(JSON.stringify({ event: "hosted_http_listening" }) + "\n");
+    void startBackgroundWhenDatabaseReady();
+  } catch (error) {
+    process.stderr.write(JSON.stringify({
+      event: "hosted_http_start_failed",
+      code: safeErrorCode(error),
+    }) + "\n");
     process.exitCode = 1;
     await stop();
   }
