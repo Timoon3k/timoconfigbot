@@ -88,22 +88,29 @@ process.once("SIGINT", () => {
 process.once("SIGTERM", () => {
   void stop();
 });
-try {
-  // Migrations are an explicit release step, never an automatic production startup side effect.
-  await pool.query("SELECT 1 FROM discord_member_jobs LIMIT 1");
-  await app.listen({ host: process.env.HOST ?? "0.0.0.0", port: config.PORT });
-  if (mode === "continuous")
-    background = supervisor.run().catch(() => {
-      process.stderr.write(
-        JSON.stringify({ event: "background_fatal" }) + "\n",
-      );
-      process.exitCode = 1;
-      void stop();
-    });
-} catch {
-  process.stderr.write(
-    JSON.stringify({ event: "hosted_startup_failed" }) + "\n",
-  );
-  process.exitCode = 1;
-  await stop();
+// Hostinger's managed loader uses require() for the configured entry file.
+// Keep the ESM entry graph synchronous; start asynchronous work in a function
+// rather than using top-level await, which causes ERR_REQUIRE_ASYNC_MODULE.
+async function startHostinger(): Promise<void> {
+  try {
+    // Migrations are an explicit release step, never an automatic production startup side effect.
+    await pool.query("SELECT 1 FROM discord_member_jobs LIMIT 1");
+    await app.listen({ host: process.env.HOST ?? "0.0.0.0", port: config.PORT });
+    if (mode === "continuous")
+      background = supervisor.run().catch(() => {
+        process.stderr.write(
+          JSON.stringify({ event: "background_fatal" }) + "\n",
+        );
+        process.exitCode = 1;
+        void stop();
+      });
+  } catch {
+    process.stderr.write(
+      JSON.stringify({ event: "hosted_startup_failed" }) + "\n",
+    );
+    process.exitCode = 1;
+    await stop();
+  }
 }
+
+void startHostinger();
