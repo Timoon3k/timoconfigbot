@@ -1,0 +1,45 @@
+{
+  "currency": "EUR",
+  "payment_processing_enabled": false,
+  "production_payment_blocker": "Require written provider approval for the actual Cronus/XIM catalog, published terms and verified compliance before activating checkout.",
+  "plans": [
+    {
+      "code": "VIP_MONTHLY_ONCE",
+      "display_name": "VIP Monthly — One-Time",
+      "price_minor": 4000,
+      "billing": "one_time",
+      "duration": {"unit": "calendar_month", "count": 1},
+      "discord_role_key": "VIP_MONTHLY"
+    },
+    {
+      "code": "VIP_MONTHLY_AUTO",
+      "display_name": "VIP Monthly — Auto-Renew",
+      "price_minor": 4000,
+      "billing": "subscription",
+      "interval": {"unit": "calendar_month", "count": 1},
+      "discord_role_key": "VIP_MONTHLY"
+    },
+    {
+      "code": "VIP_LIFETIME",
+      "display_name": "VIP Lifetime",
+      "price_minor": 10000,
+      "billing": "one_time",
+      "duration": null,
+      "discord_role_key": "VIP_LIFETIME",
+      "license_note": "No preset expiration while the defined covered service and catalog are operated; published license terms govern service termination and exclusions."
+    }
+  ],
+  "provider_adapters": {
+    "paypal_orders": {"enabled": false, "environment": "sandbox"},
+    "paypal_subscriptions": {"enabled": false, "environment": "sandbox"},
+    "google_pay": {"enabled": false, "note": "Requires an approved payment service provider"},
+    "payment_cards": {"enabled": false, "note": "Requires an approved acquirer/PSP"}
+  },
+  "access_policy": {
+    "lifetime_overrides_monthly": true,
+    "cancel_subscription_retains_paid_through": true,
+    "failed_renewal_extends_without_verified_payment": false,
+    "refund_triggers_entitlement_recalculation": true,
+    "allow_duplicate_active_auto_renew_subscriptions": false
+  }
+}

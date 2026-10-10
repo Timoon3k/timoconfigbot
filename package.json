@@ -1,0 +1,48 @@
+{
+  "name": "timonconfigs-membership-backend",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Production-oriented TimonConfigs membership backend with sandbox payments",
+  "type": "module",
+  "scripts": {
+    "validate": "node scripts/validate-config.mjs",
+    "demo": "node scripts/demo.mjs",
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc --noEmit",
+    "db:migrate": "tsx src/db/cli.ts up",
+    "db:rollback": "tsx src/db/cli.ts down",
+    "start": "node dist/server.js",
+    "dev": "tsx watch src/server.ts",
+    "discord:worker": "tsx src/discord/worker-cli.ts",
+    "discord:worker:built": "node dist/discord/worker-cli.js",
+    "discord:demo": "tsx src/discord/demo.ts",
+    "admin:grant-local": "tsx src/discord/admin-cli.ts",
+    "test:smoke": "npm run build && node scripts/smoke-phase2.mjs",
+    "lint": "eslint src tests --max-warnings 0",
+    "test:legacy": "node --test tests/*.test.mjs",
+    "test:unit": "vitest run tests/unit",
+    "test:integration": "vitest run tests/integration --no-file-parallelism",
+    "test": "npm run test:legacy && npm run test:unit && npm run test:integration"
+  },
+  "engines": {
+    "node": ">=22.13.0"
+  },
+  "dependencies": {
+    "@fastify/cookie": "^11.0.2",
+    "@fastify/rate-limit": "^10.3.0",
+    "fastify": "^5.6.1",
+    "pg": "^8.16.3",
+    "zod": "^4.1.12"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "@types/node": "^24.10.0",
+    "@types/pg": "^8.15.6",
+    "eslint": "^10.12.0",
+    "prettier": "^3.9.9",
+    "tsx": "^4.20.6",
+    "typescript": "^5.9.3",
+    "typescript-eslint": "^8.71.1",
+    "vitest": "^4.0.7"
+  }
+}

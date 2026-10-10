@@ -1,0 +1,26 @@
+{
+  "guild_id": "REPLACE_WITH_REAL_GUILD_ID",
+  "roles": {
+    "VIP_MONTHLY": "REPLACE_WITH_VIP_MONTHLY_ROLE_ID",
+    "VIP_LIFETIME": "REPLACE_WITH_VIP_LIFETIME_ROLE_ID"
+  },
+  "allowed_managed_role_keys": ["VIP_MONTHLY", "VIP_LIFETIME"],
+  "sync": {
+    "on_confirmed_payment": true,
+    "on_refund_or_chargeback": true,
+    "on_discord_account_link": true,
+    "on_user_requested_sync": true,
+    "periodic_reconciliation_minutes": 60,
+    "retry_attempts": 8,
+    "dry_run": true
+  },
+  "security": {
+    "administrator_permission_required": false,
+    "manage_roles_permission_required": true,
+    "bot_role_must_be_above_both_vip_roles": true,
+    "never_modify_roles": ["Founder", "Staff", "Free Member", "Bot integrations", "Dyno", "Ticket Tool"],
+    "writes_enabled": false,
+    "network_enabled": false,
+    "unowned_role_policy": "preserve_and_report"
+  }
+}
