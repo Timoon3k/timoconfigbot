@@ -14,6 +14,7 @@ export type SyncJob = {
   lease_token: string;
   attempt_count: number;
   max_attempts: number;
+  dry_run: boolean;
 };
 
 export async function enqueueSync(
@@ -55,14 +56,15 @@ export class SyncQueue {
           [job.id, exhausted ? "dead_letter" : "retry"],
         );
         await db.query(
-          `INSERT INTO discord_sync_history(job_id,user_id,correlation_id,attempt,outcome,error_code)
-          VALUES ($1,$2,$3,$4,$5,'LEASE_EXPIRED')`,
+          `INSERT INTO discord_sync_history(job_id,user_id,correlation_id,attempt,outcome,error_code,mode)
+          VALUES ($1,$2,$3,$4,$5,'LEASE_EXPIRED',$6)`,
           [
             job.id,
             job.user_id,
             job.correlation_id,
             job.attempt_count,
             exhausted ? "dead_letter" : "lease_recovered",
+            job.dry_run ? "dry-run" : "test-guild",
           ],
         );
         await discordAudit(
@@ -78,9 +80,14 @@ export class SyncQueue {
         SELECT id FROM discord_sync_jobs WHERE status IN ('queued','retry') AND available_at <= clock_timestamp()
         ORDER BY available_at,created_at,id LIMIT 1 FOR UPDATE SKIP LOCKED
       ) UPDATE discord_sync_jobs j SET status='processing',attempt_count=attempt_count+1,locked_by=$1,
-        locked_at=clock_timestamp(),lease_token=$2,lease_expires_at=clock_timestamp()+$3*interval '1 second'
+        locked_at=clock_timestamp(),lease_token=$2,lease_expires_at=clock_timestamp()+$3*interval '1 second',dry_run=$4
         FROM candidate c WHERE j.id=c.id RETURNING j.*`,
-        [workerId, randomUUID(), this.config.DISCORD_LEASE_SECONDS],
+        [
+          workerId,
+          randomUUID(),
+          this.config.DISCORD_LEASE_SECONDS,
+          this.config.DISCORD_DRY_RUN,
+        ],
       );
       const job = result.rows[0];
       if (job)

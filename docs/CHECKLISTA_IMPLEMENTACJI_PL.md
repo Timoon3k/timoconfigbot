@@ -84,3 +84,17 @@ Statusy: `[x]` wykonane i zweryfikowane, `[ ]` do wykonania, `[!]` zewnętrzna b
 - [ ] Runbook dla refundu, chargebacku, awarii Discord i rotacji tokenu.
 - [ ] Testy bezpieczeństwa i przegląd uprawnień przed produkcją.
 - [ ] Brak wdrożenia produkcyjnego bez zakończenia właściwych bramek zewnętrznych.
+
+## Rozszerzenie Discord — Rules Screening i kontrolowany test-guild
+
+- [x] Gateway member add/update/remove, heartbeat, reconnect/resume i kontrola tożsamości.
+- [x] Deduplikacja, trwała kolejka Free Member, leasing, skan wszystkich członków i odzyskiwanie po restarcie.
+- [x] Aktualne pending=false przed dodaniem Free Member lub VIP; brak automatycznego usuwania Free Member.
+- [x] Rozszerzenie istniejącej synchronizacji VIP o zatwierdzony tryb test-guild, journal operacji i odzyskiwanie potwierdzonej własności.
+- [x] Feature flags, oddzielny szablon testowy, blokada produkcji i domyślny DRY_RUN.
+- [x] Prywatne /membership z datą ważności, /sync-status, /help i kontrolowana rejestracja komend testowych.
+- [x] Instrukcja ręcznych permissions, Dyno i Ticket Tool oraz opcjonalne szablony wsparcia.
+- [ ] Właściciel: usunąć Dyno Free Member Autoroles przed aktywacją weryfikacji.
+- [ ] Właściciel: zaakceptować połączenie i osobno zmiany na kontrolowanym serwerze testowym.
+- [ ] Wykonać rzeczywisty test na dwóch kontrolowanych kontach Discord; w tej sesji nie wykonywano połączenia.
+- [x] Walidacja rozszerzenia: 108/108 testów, lint, typecheck, build, katalog produktów i smoke skompilowanych procesów; PostgreSQL 16 z migracjami 001–003.

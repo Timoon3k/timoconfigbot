@@ -60,3 +60,7 @@ Funkcje cheat/exploit mogą być niedozwolone przez operatorów płatności i za
 - Nieudana płatność nie przedłuża uprawnienia.
 - Lifetime nie ma daty wygaśnięcia w bazie, ale nie oznacza gwarancji działania serwisu przez nieograniczony czas.
 - Przy zakupie Lifetime przez abonenta zaoferuj anulowanie odnawialnego abonamentu i nie pozwól na niezamierzone ponowne obciążenia.
+
+## Rozszerzenie Discord: Rules Screening i kontrolowany test-guild
+
+Nowsza implementacja na gałęzi `feature/discord-completion` dodaje trwałą weryfikację członków, Gateway oraz opcjonalne operacje na osobnym, zatwierdzonym serwerze testowym. Domyślne ustawienia pozostają offline/DRY_RUN; produkcja i rzeczywiste płatności są zablokowane. Warunki, ręczna konfiguracja i ograniczenia: [DISCORD_COMPLETION_PL.md](docs/DISCORD_COMPLETION_PL.md). Szablon konfiguracji: `.env.test-guild.example`.

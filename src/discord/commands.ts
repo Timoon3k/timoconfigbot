@@ -39,8 +39,7 @@ export class DiscordCommands {
     snowflake.parse(discordId);
     let content: string;
     if (command === "help")
-      content =
-        "TimonConfigs Discord automation is currently in offline testing. Live account linking and role synchronization are not enabled yet. Membership never grants access through a chat command.";
+      content = `Connect your account through the authenticated TimonConfigs Discord account settings. For help, visit ${this.config.DISCORD_SUPPORT_URL} and open an existing support ticket. Commands cannot grant roles.`;
     else {
       const account = (
         await this.pool.query<{ user_id: string }>(
@@ -52,16 +51,31 @@ export class DiscordCommands {
       if (!account)
         content =
           "Your Discord account is not linked to an active TimonConfigs account.";
-      else if (command === "membership")
-        content = `Membership: ${await this.memberships.activeTier(account.user_id)}. Discord automation is in dry-run mode.`;
-      else if (command === "sync-status") {
+      else if (command === "membership") {
+        const tier = await this.memberships.activeTier(account.user_id);
+        const period = (
+          await this.pool.query<{ expires: Date | null }>(
+            `SELECT CASE WHEN bool_or(valid_until IS NULL) THEN NULL ELSE max(valid_until) END AS expires
+          FROM membership_entitlements WHERE user_id=$1 AND tier=$2 AND valid_from<=now()
+          AND (valid_until IS NULL OR valid_until>now()) AND (revoked_at IS NULL OR revoked_at>now())`,
+            [account.user_id, tier],
+          )
+        ).rows[0];
+        content = `Membership: ${tier}. ${
+          tier === "VIP_LIFETIME"
+            ? "No fixed expiration date; Lifetime license terms apply."
+            : period?.expires
+              ? `Paid access until ${period.expires.toISOString()} (UTC).`
+              : "No active paid period."
+        }`;
+      } else if (command === "sync-status") {
         const job = (
           await this.pool.query<{ status: string }>(
             "SELECT status FROM discord_sync_jobs WHERE user_id=$1 ORDER BY created_at DESC,id DESC LIMIT 1",
             [account.user_id],
           )
         ).rows[0];
-        content = `Account linked. Latest synchronization job: ${job?.status ?? "not requested"}. Dry-run only; no Discord changes have been made.`;
+        content = `Account linked. Latest synchronization job: ${job?.status ?? "not requested"}. ${this.config.DISCORD_DRY_RUN ? "Dry-run mode; changes are previews." : "Controlled test guild mode."}`;
       } else content = "Unknown command. Use /help.";
     }
     return {

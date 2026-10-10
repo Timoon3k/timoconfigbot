@@ -11,6 +11,17 @@ const flag = (value: "true" | "false") =>
     .transform((item) => item === "true");
 const schema = z
   .object({
+    DISCORD_ENVIRONMENT: z.enum(["offline", "test-guild"]).default("offline"),
+    DISCORD_TEST_GUILD_ID: snowflake.optional(),
+    DISCORD_GUILD_OWNER_ID: snowflake.optional(),
+    DISCORD_OWNER_APPROVED: flag("false"),
+    DISCORD_APPROVAL_REFERENCE: z.string().min(8).max(200).optional(),
+    DISCORD_GATEWAY_ENABLED: flag("false"),
+    DISCORD_COMMANDS_ENABLED: flag("false"),
+    DISCORD_VERIFICATION_ENABLED: flag("false"),
+    DISCORD_VIP_SYNC_ENABLED: flag("true"),
+    DISCORD_FREE_MEMBER_ROLE_ID: snowflake.default("100000000000000008"),
+    DISCORD_SUPPORT_URL: z.string().url().default("https://timonconfigs.com"),
     DISCORD_ADAPTER: z.enum(["mock", "rest"]).default("mock"),
     DISCORD_DRY_RUN: flag("true"),
     DISCORD_WRITES_ENABLED: flag("false"),
@@ -75,6 +86,7 @@ const schema = z
       config.DISCORD_VIP_LIFETIME_ROLE_ID,
       config.DISCORD_FOUNDER_ROLE_ID,
       config.DISCORD_STAFF_ROLE_ID,
+      config.DISCORD_FREE_MEMBER_ROLE_ID,
     ];
     if (new Set(ids).size !== ids.length)
       ctx.addIssue({
@@ -99,18 +111,44 @@ const schema = z
           "OAuth redirect must use HTTPS or loopback HTTP without credentials, query or fragment.",
       });
     }
-    if (
+    const active =
       !config.DISCORD_DRY_RUN ||
       config.DISCORD_WRITES_ENABLED ||
       config.DISCORD_NETWORK_ENABLED ||
-      config.DISCORD_ADAPTER !== "mock"
-    ) {
+      config.DISCORD_ADAPTER !== "mock" ||
+      config.DISCORD_GATEWAY_ENABLED ||
+      config.DISCORD_COMMANDS_ENABLED;
+    if (config.DISCORD_ENVIRONMENT === "offline" && active)
+      ctx.addIssue({
+        code: "custom",
+        message: "Offline mode prohibits Discord network and live writes.",
+      });
+    if (
+      config.DISCORD_ENVIRONMENT === "test-guild" &&
+      (!config.DISCORD_OWNER_APPROVED ||
+        !config.DISCORD_APPROVAL_REFERENCE ||
+        !config.DISCORD_GUILD_OWNER_ID ||
+        config.DISCORD_TEST_GUILD_ID !== config.DISCORD_GUILD_ID ||
+        config.DISCORD_GUILD_ID === "100000000000000001" ||
+        config.DISCORD_ADAPTER !== "rest" ||
+        !config.DISCORD_NETWORK_ENABLED)
+    )
       ctx.addIssue({
         code: "custom",
         message:
-          "This release permits only offline mock and DRY_RUN. Live activation needs a separately approved release.",
+          "Test guild requires explicit owner approval, owner identity and matching test guild ID.",
       });
-    }
+    if (config.DISCORD_WRITES_ENABLED === config.DISCORD_DRY_RUN)
+      ctx.addIssue({
+        code: "custom",
+        message: "Writes and DRY_RUN must be complementary.",
+      });
+    const support = new URL(config.DISCORD_SUPPORT_URL);
+    if (support.protocol !== "https:" || support.username || support.password)
+      ctx.addIssue({
+        code: "custom",
+        message: "Support URL must use HTTPS without credentials.",
+      });
   });
 export type DiscordConfig = z.infer<typeof schema>;
 export function loadDiscordConfig(
@@ -118,7 +156,14 @@ export function loadDiscordConfig(
 ): DiscordConfig {
   if (env.NODE_ENV === "production")
     throw new Error(
-      "This offline Discord release is not approved for production activation.",
+      "Production Discord activation is not supported by this release.",
     );
-  return schema.parse(env);
+  const normalized = { ...env };
+  for (const key of [
+    "DISCORD_TEST_GUILD_ID",
+    "DISCORD_GUILD_OWNER_ID",
+    "DISCORD_APPROVAL_REFERENCE",
+  ])
+    if (normalized[key] === "") delete normalized[key];
+  return schema.parse(normalized);
 }

@@ -1,12 +1,16 @@
 import { randomUUID } from "node:crypto";
 import { setTimeout as delay } from "node:timers/promises";
+import type { MemberVerification } from "./verification.js";
 import type { DiscordSyncService } from "./sync.js";
 
 export class DiscordWorker {
   private stopping = false;
   private readonly controller = new AbortController();
   public readonly id = randomUUID();
-  public constructor(private readonly sync: DiscordSyncService) {}
+  public constructor(
+    private readonly sync: DiscordSyncService,
+    private readonly verification?: MemberVerification,
+  ) {}
   public stop(): void {
     this.stopping = true;
     this.controller.abort();
@@ -18,6 +22,7 @@ export class DiscordWorker {
       [`worker:${this.id}`],
     );
     await this.sync.reconcileBatch();
+    await this.verification?.reconcileBatch();
     let count = 0;
     // Bounded, sequential requests per process; other workers use SKIP LOCKED.
     for (
@@ -29,8 +34,10 @@ export class DiscordWorker {
         "UPDATE discord_runtime SET heartbeat_at=now() WHERE name=$1",
         [`worker:${this.id}`],
       );
-      if (!(await this.sync.runOne(this.id))) break;
-      count++;
+      const verified = (await this.verification?.runOne()) ?? false;
+      const synced = await this.sync.runOne(this.id);
+      if (!verified && !synced) break;
+      count += Number(verified) + Number(synced);
     }
     return count;
   }
@@ -45,7 +52,7 @@ export class DiscordWorker {
                 event: "discord_worker_batch",
                 workerId: this.id,
                 processed,
-                dryRun: true,
+                dryRun: this.sync.config.DISCORD_DRY_RUN,
               }) + "\n",
             );
         } catch {

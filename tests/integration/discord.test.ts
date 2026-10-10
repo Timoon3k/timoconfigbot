@@ -49,7 +49,7 @@ beforeAll(async () => {
 beforeEach(async () => {
   if (app) await app.close();
   await pool.query(`TRUNCATE administrative_audit_logs,discord_sync_jobs,payment_events,membership_entitlements,
-    payments,billing_subscriptions,orders,discord_accounts,user_sessions,app_users,discord_mock_members,discord_runtime RESTART IDENTITY CASCADE`);
+    payments,billing_subscriptions,orders,discord_accounts,user_sessions,app_users,discord_mock_members,discord_runtime,discord_member_jobs,discord_gateway_events,discord_role_operations RESTART IDENTITY CASCADE`);
   now = date("2026-02-15T00:00:00Z");
   adapter = new MockDiscordAdapter(config);
   sync = new DiscordSyncService(
@@ -740,6 +740,56 @@ describe("OAuth linking lifecycle and authorization", () => {
     ).toBe(200);
     expect((await sync.preview(owner.id))?.permitted).toBe(true);
   });
+  it("restricts verification retries to administrators with CSRF", async () => {
+    const owner = await user();
+    const administrator = await user(false, "admin");
+    const ordinary = await auth.login(owner.email, password);
+    const privileged = await auth.login(administrator.email, password);
+    await pool.query(
+      `INSERT INTO discord_member_jobs(guild_id,discord_user_id,status) VALUES($1,$2,'dead_letter')`,
+      [config.DISCORD_GUILD_ID, memberId],
+    );
+    const path = `/admin/discord/member-jobs/${memberId}/retry`;
+    expect(
+      (await app.inject({ method: "POST", url: path, payload: {} })).statusCode,
+    ).toBe(401);
+    expect(
+      (
+        await app.inject({
+          method: "POST",
+          url: path,
+          payload: {},
+          headers: {
+            authorization: `Bearer ${ordinary.token}`,
+            "x-csrf-token": ordinary.csrfToken,
+          },
+        })
+      ).statusCode,
+    ).toBe(403);
+    expect(
+      (
+        await app.inject({
+          method: "POST",
+          url: path,
+          payload: {},
+          headers: { authorization: `Bearer ${privileged.token}` },
+        })
+      ).statusCode,
+    ).toBe(401);
+    expect(
+      (
+        await app.inject({
+          method: "POST",
+          url: path,
+          payload: {},
+          headers: {
+            authorization: `Bearer ${privileged.token}`,
+            "x-csrf-token": privileged.csrfToken,
+          },
+        })
+      ).statusCode,
+    ).toBe(200);
+  });
   it("keeps commands private, scoped to the requester, and free of billing details", async () => {
     const owner = await user();
     await purchase(owner.id, "VIP_LIFETIME");
@@ -830,7 +880,8 @@ describe("Phase 2 migration reversibility", () => {
   it("rolls back 002 and reapplies it without losing Phase 1 users or entitlements", async () => {
     const owner = await user();
     await purchase(owner.id, "VIP_LIFETIME");
-    await migrateDown(pool);
+    await migrateDown(pool); // 003: no live operation evidence in this offline fixture.
+    await migrateDown(pool); // 002
     expect(await memberships.activeTier(owner.id, now)).toBe("VIP_LIFETIME");
     await migrateUp(pool);
     expect(

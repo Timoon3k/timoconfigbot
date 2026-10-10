@@ -2,9 +2,14 @@
   "guild_id": "REPLACE_WITH_REAL_GUILD_ID",
   "roles": {
     "VIP_MONTHLY": "REPLACE_WITH_VIP_MONTHLY_ROLE_ID",
-    "VIP_LIFETIME": "REPLACE_WITH_VIP_LIFETIME_ROLE_ID"
+    "VIP_LIFETIME": "REPLACE_WITH_VIP_LIFETIME_ROLE_ID",
+    "FREE_MEMBER": "REPLACE_WITH_FREE_MEMBER_ROLE_ID"
   },
-  "allowed_managed_role_keys": ["VIP_MONTHLY", "VIP_LIFETIME"],
+  "allowed_managed_role_keys": [
+    "VIP_MONTHLY",
+    "VIP_LIFETIME",
+    "FREE_MEMBER"
+  ],
   "sync": {
     "on_confirmed_payment": true,
     "on_refund_or_chargeback": true,
@@ -18,9 +23,22 @@
     "administrator_permission_required": false,
     "manage_roles_permission_required": true,
     "bot_role_must_be_above_both_vip_roles": true,
-    "never_modify_roles": ["Founder", "Staff", "Free Member", "Bot integrations", "Dyno", "Ticket Tool"],
+    "never_modify_roles": [
+      "Founder",
+      "Staff",
+      "Bot integrations",
+      "Dyno",
+      "Ticket Tool"
+    ],
     "writes_enabled": false,
     "network_enabled": false,
-    "unowned_role_policy": "preserve_and_report"
+    "unowned_role_policy": "preserve_and_report",
+    "free_member_policy": "add_only_after_current_pending_false_never_remove"
+  },
+  "verification": {
+    "enabled": false,
+    "gateway_intents": 3,
+    "recheck_current_member": true,
+    "dyno_autorole_must_be_disabled_by_owner": true
   }
 }

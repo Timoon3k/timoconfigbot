@@ -23,10 +23,26 @@ export class DisabledDiscordTransport implements HttpTransport {
   }
 }
 
-export const LIVE_DISCORD_RELEASE_APPROVED = false;
+export function assertTestGuildNetwork(config: DiscordConfig): void {
+  if (
+    config.DISCORD_ENVIRONMENT !== "test-guild" ||
+    !config.DISCORD_OWNER_APPROVED ||
+    !config.DISCORD_APPROVAL_REFERENCE ||
+    !config.DISCORD_NETWORK_ENABLED ||
+    config.DISCORD_TEST_GUILD_ID !== config.DISCORD_GUILD_ID ||
+    !config.DISCORD_GUILD_OWNER_ID
+  )
+    throw new DiscordFailure("PRODUCTION_CONNECTION_NOT_APPROVED");
+}
+export function assertTestGuildWrites(config: DiscordConfig): void {
+  assertTestGuildNetwork(config);
+  if (config.DISCORD_DRY_RUN || !config.DISCORD_WRITES_ENABLED)
+    throw new DiscordFailure("LIVE_MUTATIONS_NOT_APPROVED");
+}
 const memberSchema = z.object({
-  user: z.object({ id: snowflake }),
+  user: z.object({ id: snowflake, bot: z.boolean().optional() }),
   roles: z.array(snowflake),
+  pending: z.boolean().optional(),
 });
 const rolesSchema = z.array(
   z.object({
@@ -124,12 +140,39 @@ export class RestDiscordAdapter implements DiscordAdapter {
       );
       if (member.user.id !== id)
         throw new DiscordFailure("MEMBER_IDENTITY_MISMATCH");
-      return { id, roles: member.roles };
+      return {
+        id,
+        roles: member.roles,
+        ...(member.user.bot === undefined ? {} : { bot: member.user.bot }),
+        ...(member.pending === undefined ? {} : { pending: member.pending }),
+      };
     } catch (error) {
       if (error instanceof DiscordFailure && error.code === "DISCORD_NOT_FOUND")
         return null;
       throw error;
     }
+  }
+  public async listMembers(after: string, limit: number): Promise<Member[]> {
+    if (
+      !/^[0-9]{1,20}$/.test(after) ||
+      !Number.isInteger(limit) ||
+      limit < 1 ||
+      limit > 1000
+    )
+      throw new DiscordFailure("MEMBER_PAGE_INVALID");
+    const rows = z
+      .array(memberSchema)
+      .parse(
+        await this.request(
+          `/api/v10/guilds/${this.config.DISCORD_GUILD_ID}/members?limit=${limit}&after=${after}`,
+        ),
+      );
+    return rows.map((row) => ({
+      id: row.user.id,
+      roles: row.roles,
+      ...(row.user.bot === undefined ? {} : { bot: row.user.bot }),
+      ...(row.pending === undefined ? {} : { pending: row.pending }),
+    }));
   }
   public async addRole(memberId: string, roleId: string): Promise<void> {
     await this.mutate(memberId, roleId, "PUT");
@@ -144,14 +187,24 @@ export class RestDiscordAdapter implements DiscordAdapter {
   ): Promise<void> {
     assertRole(this.config, roleId);
     snowflake.parse(memberId);
-    if (
-      !LIVE_DISCORD_RELEASE_APPROVED ||
-      this.config.DISCORD_DRY_RUN ||
-      !this.config.DISCORD_WRITES_ENABLED
-    ) {
+    try {
+      assertTestGuildWrites(this.config);
+    } catch {
       throw new DiscordFailure("LIVE_MUTATIONS_NOT_APPROVED");
     }
     verifyGuild(this.config, await this.inspectGuild());
+    const current = await this.getMember(memberId);
+    if (!current) throw new DiscordFailure("MEMBER_ABSENT");
+    // Giving any role can bypass Rules Screening; require explicit REST verification for additions.
+    if (method === "PUT" && current.roles.includes(roleId))
+      throw new DiscordFailure("ROLE_ASSIGNMENT_RACE");
+    if (method === "PUT" && current.pending !== false)
+      throw new DiscordFailure("MEMBER_SCREENING_INCOMPLETE");
+    if (
+      method === "DELETE" &&
+      roleId === this.config.DISCORD_FREE_MEMBER_ROLE_ID
+    )
+      throw new DiscordFailure("FREE_MEMBER_REMOVAL_FORBIDDEN");
     await this.request(
       `/api/v10/guilds/${this.config.DISCORD_GUILD_ID}/members/${memberId}/roles/${roleId}`,
       method,

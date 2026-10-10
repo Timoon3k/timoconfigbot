@@ -225,6 +225,30 @@ export function registerDiscordRoutes(
     await sync.queue.retry(jobId, actor.id);
     return { queued: true };
   });
+  app.post("/admin/discord/member-jobs/:discordId/retry", async (request) => {
+    const actor = await admin(request, true);
+    const { discordId } = z
+      .object({ discordId: z.string().regex(/^[0-9]{17,20}$/) })
+      .parse(request.params);
+    z.object({})
+      .strict()
+      .parse(request.body ?? {});
+    const result = await sync.pool.query(
+      `UPDATE discord_member_jobs SET status='queued',attempt_count=0,available_at=now(),
+      lease_token=NULL,lease_expires_at=NULL WHERE guild_id=$1 AND discord_user_id=$2 AND status IN ('dead_letter','retry') RETURNING discord_user_id`,
+      [sync.config.DISCORD_GUILD_ID, discordId],
+    );
+    if (!result.rowCount) throw new DiscordFailure("JOB_NOT_RETRYABLE");
+    await discordAudit(
+      sync.pool,
+      "DISCORD_VERIFICATION_RETRY_APPROVED",
+      null,
+      { memberId: discordId },
+      randomUUID(),
+      actor.id,
+    );
+    return { queued: true };
+  });
   app.get("/admin/discord/statistics", async (request) => {
     await admin(request);
     return sync.stats();
@@ -248,11 +272,17 @@ export function registerDiscordRoutes(
   });
   app.get("/admin/discord/inventory", async (request) => {
     await admin(request);
-    const page = z.object({
-      after: z.string().regex(/^[0-9]{1,20}$/).default("0"),
-      limit: z.coerce.number().int().min(1).max(100).default(50),
-    }).parse(request.query);
-    const result = await sync.pool.query(`SELECT m.discord_user_id,m.roles,m.present,m.updated_at,
+    const page = z
+      .object({
+        after: z
+          .string()
+          .regex(/^[0-9]{1,20}$/)
+          .default("0"),
+        limit: z.coerce.number().int().min(1).max(100).default(50),
+      })
+      .parse(request.query);
+    const result = await sync.pool.query(
+      `SELECT m.discord_user_id,m.roles,m.present,m.updated_at,
       a.user_id,(a.user_id IS NULL OR a.unlinked_at IS NOT NULL) AS orphaned,
       ARRAY(SELECT r FROM jsonb_array_elements_text(m.roles) r WHERE r=ANY($4::text[]) AND NOT EXISTS(
         SELECT 1 FROM discord_role_ownership o WHERE o.guild_id=m.guild_id
@@ -260,8 +290,21 @@ export function registerDiscordRoutes(
       FROM discord_mock_members m LEFT JOIN discord_accounts a ON a.discord_user_id=m.discord_user_id
       WHERE m.guild_id=$1 AND m.discord_user_id::numeric>$2::numeric
       ORDER BY m.discord_user_id::numeric LIMIT $3`,
-      [sync.config.DISCORD_GUILD_ID,page.after,page.limit,[sync.config.DISCORD_VIP_MONTHLY_ROLE_ID,sync.config.DISCORD_VIP_LIFETIME_ROLE_ID]]);
-    return {members:result.rows,source:"local-mock-inventory",liveGuildInventoryComplete:false};
+      [
+        sync.config.DISCORD_GUILD_ID,
+        page.after,
+        page.limit,
+        [
+          sync.config.DISCORD_VIP_MONTHLY_ROLE_ID,
+          sync.config.DISCORD_VIP_LIFETIME_ROLE_ID,
+        ],
+      ],
+    );
+    return {
+      members: result.rows,
+      source: "local-mock-inventory",
+      liveGuildInventoryComplete: false,
+    };
   });
   app.post("/admin/discord/users/:userId/ownership", async (request) => {
     const actor = await admin(request, true);
@@ -277,6 +320,8 @@ export function registerDiscordRoutes(
       .strict()
       .parse(request.body);
     await auth.reauthenticate(actor.id, body.password);
+    if (sync.config.DISCORD_ENVIRONMENT !== "offline")
+      throw new DiscordFailure("MOCK_OWNERSHIP_ONLY");
     const preview = await sync.preview(userId);
     const roleId =
       body.roleKey === "VIP_MONTHLY"
@@ -332,7 +377,12 @@ export function registerDiscordRoutes(
       return {
         database: "ok",
         worker: worker?.alive ? "ok" : "not-running",
-        mode: "offline-dry-run",
+        mode:
+          sync.config.DISCORD_ENVIRONMENT === "offline"
+            ? "offline-dry-run"
+            : sync.config.DISCORD_DRY_RUN
+              ? "test-guild-dry-run"
+              : "test-guild",
       };
     } catch {
       return reply.code(503).send({ database: "unavailable" });

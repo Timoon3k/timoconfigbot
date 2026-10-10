@@ -22,7 +22,8 @@
     "test:legacy": "node --test tests/*.test.mjs",
     "test:unit": "vitest run tests/unit",
     "test:integration": "vitest run tests/integration --no-file-parallelism",
-    "test": "npm run test:legacy && npm run test:unit && npm run test:integration"
+    "test": "npm run test:legacy && npm run test:unit && npm run test:integration",
+    "discord:commands": "tsx src/discord/register-commands-cli.ts"
   },
   "engines": {
     "node": ">=22.13.0"

@@ -5,6 +5,7 @@ import type { MembershipService } from "../membership/service.js";
 import type { DiscordConfig } from "./config.js";
 import { snowflake } from "./config.js";
 import { discordAudit } from "./audit.js";
+import { RoleOperations } from "./operations.js";
 import { roleDiff, verifyGuild } from "./policy.js";
 import { enqueueSync, SyncQueue, type SyncJob } from "./queue.js";
 import { DiscordFailure, type DiscordAdapter, type Preview } from "./types.js";
@@ -46,8 +47,8 @@ export class DiscordSyncService {
     targetId: string | null,
   ): Promise<Preview | null> {
     // Serialize with payment processing and identity replacement, not with other users.
-    const user = await db.query(
-      "SELECT id FROM app_users WHERE id=$1 FOR UPDATE",
+    const user = await db.query<{ disabled_at: Date | null }>(
+      "SELECT id,disabled_at FROM app_users WHERE id=$1 FOR UPDATE",
       [userId],
     );
     if (!user.rowCount) throw new DiscordFailure("USER_NOT_FOUND");
@@ -60,6 +61,9 @@ export class DiscordSyncService {
     const id = targetId ?? account?.discord_user_id;
     if (!id) return null;
     snowflake.parse(id);
+    await db.query("SELECT pg_advisory_xact_lock(hashtextextended($1,0))", [
+      `discord-member:${this.config.DISCORD_GUILD_ID}:${id}`,
+    ]);
     const currentIdentity = account?.discord_user_id === id;
     const guild = await boundedRead(this.adapter.inspectGuild());
     let policyError: string | null = null;
@@ -76,9 +80,10 @@ export class DiscordSyncService {
     if (!member) throw new DiscordFailure("MEMBER_ABSENT");
     if (member.id !== id) throw new DiscordFailure("MEMBER_IDENTITY_MISMATCH");
     const now = this.clock();
-    const tier = currentIdentity
-      ? await this.memberships.activeTierWith(db, userId, now)
-      : "FREE";
+    const tier =
+      currentIdentity && !user.rows[0]?.disabled_at
+        ? await this.memberships.activeTierWith(db, userId, now)
+        : "FREE";
     const refs = currentIdentity
       ? await db.query<{ id: string }>(
           `SELECT id FROM membership_entitlements
@@ -88,10 +93,22 @@ export class DiscordSyncService {
         )
       : { rows: [] };
     const diff = roleDiff(this.config, member.roles, tier);
+    await new RoleOperations(
+      this.pool,
+      this.config,
+      this.adapter,
+    ).recoverOwnership(db, userId, id, member.roles);
+    if (
+      this.config.DISCORD_ENVIRONMENT === "test-guild" &&
+      diff.add.length &&
+      member.pending !== false
+    )
+      policyError = "MEMBER_SCREENING_INCOMPLETE";
     const ownership = await db.query<{ role_id: string }>(
       `SELECT role_id FROM discord_role_ownership
-      WHERE guild_id=$1 AND discord_user_id=$2 AND user_id=$3`,
-      [this.config.DISCORD_GUILD_ID, id, userId],
+      WHERE guild_id=$1 AND discord_user_id=$2 AND user_id=$3
+      AND ($4::boolean OR source IN ('bot_assignment','approved_migration'))`,
+      [this.config.DISCORD_GUILD_ID, id, userId, this.config.DISCORD_DRY_RUN],
     );
     const owned = new Set(ownership.rows.map((row) => row.role_id));
     const conflicts = diff.remove.filter((role) => !owned.has(role));
@@ -130,6 +147,7 @@ export class DiscordSyncService {
   }
 
   public async runOne(workerId = randomUUID()): Promise<boolean> {
+    if (!this.config.DISCORD_VIP_SYNC_ENABLED) return false;
     const cooldown = await this.pool.query<{ blocked: boolean }>(
       "SELECT next_request_at>clock_timestamp() AS blocked FROM discord_runtime WHERE name=$1",
       [`rate:${this.config.DISCORD_GUILD_ID}`],
@@ -219,17 +237,44 @@ export class DiscordSyncService {
               job.correlation_id,
             );
         }
+        const live = !this.config.DISCORD_DRY_RUN;
+        if (preview?.permitted && live) {
+          const operations = new RoleOperations(
+            this.pool,
+            this.config,
+            this.adapter,
+          );
+          // Add the new tier before removing the old tier. Entitlements remain locked throughout.
+          for (const role of preview.add)
+            await operations.apply(
+              db,
+              preview.discordUserId,
+              role,
+              "add",
+              job.user_id,
+            );
+          for (const role of preview.remove)
+            await operations.apply(
+              db,
+              preview.discordUserId,
+              role,
+              "remove",
+              job.user_id,
+            );
+        }
         const outcome = !preview
           ? "unlinked"
           : !preview.permitted
             ? "dead_letter"
             : preview.add.length || preview.remove.length
-              ? "preview"
+              ? live
+                ? "applied"
+                : "preview"
               : "noop";
-        // No adapter mutation is invoked by the offline worker. Never mark simulated roles as bot-owned.
+        // Preview is never proof of assignment. Mode describes actual execution.
         await db.query(
-          `INSERT INTO discord_sync_history(job_id,user_id,discord_user_id,correlation_id,attempt,outcome,error_code,preview)
-          VALUES($1,$2,$3,$4,$5,$6,$7,$8::jsonb)`,
+          `INSERT INTO discord_sync_history(job_id,user_id,discord_user_id,correlation_id,attempt,outcome,error_code,preview,mode)
+          VALUES($1,$2,$3,$4,$5,$6,$7,$8::jsonb,$9)`,
           [
             job.id,
             job.user_id,
@@ -239,17 +284,19 @@ export class DiscordSyncService {
             outcome,
             preview?.errorCode ?? null,
             preview ? JSON.stringify(preview) : null,
+            live ? "test-guild" : "dry-run",
           ],
         );
         await db.query(
           `UPDATE discord_sync_jobs SET status=$3::discord_job_status,completed_at=now(),lease_token=NULL,
-          lease_expires_at=NULL,locked_by=NULL,locked_at=NULL,last_error_code=$4,last_error_message=NULL
+          lease_expires_at=NULL,locked_by=NULL,locked_at=NULL,last_error_code=$4,last_error_message=NULL,dry_run=$5
           WHERE id=$1 AND lease_token=$2`,
           [
             job.id,
             job.lease_token,
             outcome === "dead_letter" ? "dead_letter" : "succeeded",
             preview?.errorCode ?? null,
+            this.config.DISCORD_DRY_RUN,
           ],
         );
         await discordAudit(
@@ -262,7 +309,7 @@ export class DiscordSyncService {
             jobId: job.id,
             outcome,
             errorCode: preview?.errorCode ?? null,
-            dryRun: true,
+            dryRun: this.config.DISCORD_DRY_RUN,
           },
           job.correlation_id,
         );
@@ -312,8 +359,8 @@ export class DiscordSyncService {
           [`rate:${this.config.DISCORD_GUILD_ID}`, delay],
         );
       await db.query(
-        `INSERT INTO discord_sync_history(job_id,user_id,correlation_id,attempt,outcome,error_code)
-        VALUES($1,$2,$3,$4,$5,$6)`,
+        `INSERT INTO discord_sync_history(job_id,user_id,correlation_id,attempt,outcome,error_code,mode)
+        VALUES($1,$2,$3,$4,$5,$6,$7)`,
         [
           job.id,
           job.user_id,
@@ -321,6 +368,7 @@ export class DiscordSyncService {
           job.attempt_count,
           outcome,
           failure.code,
+          this.config.DISCORD_DRY_RUN ? "dry-run" : "test-guild",
         ],
       );
       await discordAudit(
@@ -449,7 +497,7 @@ export class DiscordSyncService {
   }
 
   public async stats() {
-    const [jobs, history, runtime] = await Promise.all([
+    const [jobs, history, runtime, members] = await Promise.all([
       this.pool
         .query(`SELECT status,count(*)::int AS count,COALESCE(max(EXTRACT(EPOCH FROM now()-created_at)),0)::float AS oldest_seconds
         FROM discord_sync_jobs GROUP BY status`),
@@ -459,12 +507,22 @@ export class DiscordSyncService {
       this.pool.query(
         "SELECT name,heartbeat_at,last_scan_at,next_scan_at FROM discord_runtime WHERE name NOT LIKE 'rate:%'",
       ),
+      this.pool.query(
+        "SELECT status,count(*)::int AS count FROM discord_member_jobs WHERE guild_id=$1 GROUP BY status",
+        [this.config.DISCORD_GUILD_ID],
+      ),
     ]);
     return {
       jobs: jobs.rows,
+      memberJobs: members.rows,
       outcomes: history.rows,
       workers: runtime.rows,
-      mode: "offline-dry-run",
+      mode:
+        this.config.DISCORD_ENVIRONMENT === "offline"
+          ? "offline-dry-run"
+          : this.config.DISCORD_DRY_RUN
+            ? "test-guild-dry-run"
+            : "test-guild",
     };
   }
 }

@@ -2,7 +2,7 @@ import { setTimeout as delay } from "node:timers/promises";
 import type { DatabasePool } from "../db/pool.js";
 import { inTransaction } from "../db/pool.js";
 import type { DiscordConfig } from "./config.js";
-import { LIVE_DISCORD_RELEASE_APPROVED, type HttpTransport } from "./rest.js";
+import { assertTestGuildNetwork, type HttpTransport } from "./rest.js";
 import { DiscordFailure } from "./types.js";
 import { assertRole } from "./policy.js";
 
@@ -50,7 +50,7 @@ export class PostgresDiscordRateGate {
   }
 }
 
-/** Production-capable HTTPS transport, unreachable in this offline-approved release. */
+/** HTTPS transport restricted to the explicitly approved test guild. */
 export class ApprovedDiscordHttpsTransport implements HttpTransport {
   public constructor(
     private readonly config: DiscordConfig,
@@ -60,23 +60,36 @@ export class ApprovedDiscordHttpsTransport implements HttpTransport {
     path: string,
     init: { method: string; headers: Record<string, string>; body?: string },
   ): Promise<Response> {
-    if (!LIVE_DISCORD_RELEASE_APPROVED || !this.config.DISCORD_NETWORK_ENABLED)
-      throw new DiscordFailure("PRODUCTION_CONNECTION_NOT_APPROVED");
+    assertTestGuildNetwork(this.config);
     const guild = this.config.DISCORD_GUILD_ID;
+    const commands = `/api/v10/applications/${this.config.DISCORD_CLIENT_ID}/guilds/${guild}/commands`;
     const allowed =
+      (path === commands && this.config.DISCORD_COMMANDS_ENABLED) ||
       path === "/api/v10/oauth2/token" ||
       path === "/api/v10/users/@me" ||
+      path === "/api/v10/gateway/bot" ||
+      new RegExp(
+        `^/api/v10/guilds/${guild}/members\\?limit=[0-9]{1,4}&after=[0-9]{1,20}$`,
+      ).test(path) ||
       new RegExp(
         `^/api/v10/guilds/${guild}(?:/roles|/members/[0-9]{17,20}(?:/roles/[0-9]{17,20})?)?$`,
       ).test(path);
     if (!allowed) throw new DiscordFailure("DISCORD_ROUTE_NOT_ALLOWED");
+    if (
+      path === commands &&
+      (!this.config.DISCORD_COMMANDS_ENABLED || init.method !== "PUT")
+    )
+      throw new DiscordFailure("DISCORD_ROUTE_NOT_ALLOWED");
     if (init.method !== "GET" && path !== "/api/v10/oauth2/token") {
       if (this.config.DISCORD_DRY_RUN || !this.config.DISCORD_WRITES_ENABLED)
         throw new DiscordFailure("LIVE_MUTATIONS_NOT_APPROVED");
       const role = path.match(/\/roles\/([0-9]{17,20})$/)?.[1];
-      if (!role || !["PUT", "DELETE"].includes(init.method))
+      if (
+        path !== commands &&
+        (!role || !["PUT", "DELETE"].includes(init.method))
+      )
         throw new DiscordFailure("DISCORD_ROUTE_NOT_ALLOWED");
-      assertRole(this.config, role);
+      if (role) assertRole(this.config, role);
     }
     await delay(await this.gate.reserve());
     let response: Response;

@@ -27,6 +27,7 @@ export function mockGuild(config: DiscordConfig): GuildState {
       role("100000000000000007", "TimonConfigs Bot", 3, "268435456"),
       role(config.DISCORD_STAFF_ROLE_ID, "Staff", 4),
       role(config.DISCORD_FOUNDER_ROLE_ID, "Founder", 5),
+      role(config.DISCORD_FREE_MEMBER_ROLE_ID, "Free Member", 0),
     ],
   };
 }
@@ -50,6 +51,13 @@ export class MockDiscordAdapter implements DiscordAdapter {
   }
   public async getMember(id: string): Promise<Member | null> {
     return structuredClone(this.members.get(id) ?? null);
+  }
+  public async listMembers(after: string, limit: number): Promise<Member[]> {
+    return [...this.members.values()]
+      .filter((m) => BigInt(m.id) > BigInt(after))
+      .sort((a, b) => (BigInt(a.id) < BigInt(b.id) ? -1 : 1))
+      .slice(0, limit)
+      .map((m) => structuredClone(m));
   }
   public async addRole(memberId: string, roleId: string): Promise<void> {
     this.change(memberId, roleId, "add");
@@ -83,13 +91,33 @@ export class DatabaseMockDiscordAdapter implements DiscordAdapter {
     return mockGuild(this.config);
   }
   public async getMember(id: string): Promise<Member | null> {
-    const result = await this.pool.query<{ roles: string[] }>(
-      "SELECT roles FROM discord_mock_members WHERE guild_id=$1 AND discord_user_id=$2 AND present=true",
+    const result = await this.pool.query<{
+      roles: string[];
+      pending: boolean | null;
+    }>(
+      "SELECT roles,pending FROM discord_mock_members WHERE guild_id=$1 AND discord_user_id=$2 AND present=true",
       [this.config.DISCORD_GUILD_ID, snowflake.parse(id)],
     );
     return result.rows[0]
-      ? { id, roles: result.rows[0].roles.map((role) => snowflake.parse(role)) }
+      ? {
+          id,
+          roles: result.rows[0].roles.map((role) => snowflake.parse(role)),
+          ...(result.rows[0].pending === null
+            ? {}
+            : { pending: result.rows[0].pending }),
+        }
       : null;
+  }
+  public async listMembers(after: string, limit: number): Promise<Member[]> {
+    const rows = await this.pool.query<{ discord_user_id: string }>(
+      `SELECT discord_user_id FROM discord_mock_members WHERE guild_id=$1 AND present=true
+       AND discord_user_id::numeric>$2::numeric ORDER BY discord_user_id::numeric LIMIT $3`,
+      [this.config.DISCORD_GUILD_ID, after, limit],
+    );
+    const members = await Promise.all(
+      rows.rows.map((row) => this.getMember(row.discord_user_id)),
+    );
+    return members.filter((member): member is Member => member !== null);
   }
   public async addRole(_memberId: string, _roleId: string): Promise<void> {
     throw new DiscordFailure("MOCK_STATE_READ_ONLY");
@@ -108,6 +136,9 @@ export class DryRunDiscordAdapter implements DiscordAdapter {
   }
   public getMember(id: string): Promise<Member | null> {
     return this.reader.getMember(id);
+  }
+  public listMembers(after: string, limit: number): Promise<Member[]> {
+    return this.reader.listMembers(after, limit);
   }
   public async addRole(_memberId: string, _roleId: string): Promise<void> {
     throw new DiscordFailure("DRY_RUN_MUTATION_BLOCKED");

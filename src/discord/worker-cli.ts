@@ -12,17 +12,48 @@ const auth = new AuthService(
   config.PASSWORD_PEPPER,
   config.SESSION_PEPPER,
 );
-const { sync } = createDiscordRuntime(
+const { sync, verification, gateway } = createDiscordRuntime(
   pool,
   auth,
   new MembershipService(pool),
   config.SESSION_PEPPER,
 );
-const worker = new DiscordWorker(sync);
-process.once("SIGINT", () => worker.stop());
-process.once("SIGTERM", () => worker.stop());
+const worker = new DiscordWorker(sync, verification);
+const stop = () => {
+  worker.stop();
+  gateway?.stop();
+};
+process.once("SIGINT", stop);
+process.once("SIGTERM", stop);
+const gatewayLease = gateway ? await pool.connect() : null;
+let tasks: Array<Promise<void>> = [];
 try {
-  await worker.run();
+  const leader = gatewayLease
+    ? (
+        await gatewayLease.query<{ leader: boolean }>(
+          "SELECT pg_try_advisory_lock(hashtextextended($1,0)) AS leader",
+          [`discord-gateway:${sync.config.DISCORD_GUILD_ID}`],
+        )
+      ).rows[0]?.leader
+    : false;
+  tasks = [worker.run()];
+  if (leader && gateway)
+    tasks.push(
+      gateway.run().catch((error) => {
+        stop();
+        throw error;
+      }),
+    );
+  await Promise.all(tasks);
 } finally {
+  stop();
+  await Promise.allSettled(tasks);
+  if (gatewayLease) {
+    await gatewayLease.query(
+      "SELECT pg_advisory_unlock(hashtextextended($1,0))",
+      [`discord-gateway:${sync.config.DISCORD_GUILD_ID}`],
+    );
+    gatewayLease.release();
+  }
   await pool.end();
 }

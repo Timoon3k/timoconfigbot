@@ -4,3 +4,6 @@ dist/
 .env.*.local
 coverage/
 *.log
+.env.*
+!.env.example
+!.env.test-guild.example

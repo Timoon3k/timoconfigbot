@@ -7,7 +7,12 @@ export type Role = {
   permissions: string;
   managed: boolean;
 };
-export type Member = { id: string; roles: string[] };
+export type Member = {
+  id: string;
+  roles: string[];
+  pending?: boolean;
+  bot?: boolean;
+};
 export type GuildState = {
   id: string;
   ownerId: string;
@@ -18,6 +23,7 @@ export interface DiscordAdapter {
   readonly kind: "mock" | "rest" | "dry-run";
   inspectGuild(): Promise<GuildState>;
   getMember(id: string): Promise<Member | null>;
+  listMembers(after: string, limit: number): Promise<Member[]>;
   addRole(memberId: string, roleId: string): Promise<void>;
   removeRole(memberId: string, roleId: string): Promise<void>;
 }

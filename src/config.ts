@@ -40,8 +40,5 @@ export function loadConfig(
       "Production payment processing is intentionally disabled in Phase 1.",
     );
   }
-  if (!config.DISCORD_DRY_RUN) {
-    throw new Error("Discord DRY_RUN must remain enabled in Phase 1.");
-  }
   return config;
 }

@@ -10,13 +10,22 @@ export function managedRoles(config: DiscordConfig): string[] {
   ];
 }
 export function assertRole(config: DiscordConfig, roleId: string): void {
-  if (!managedRoles(config).includes(roleId))
+  if (
+    ![
+      ...managedRoles(config),
+      ...(config.DISCORD_VERIFICATION_ENABLED
+        ? [config.DISCORD_FREE_MEMBER_ROLE_ID]
+        : []),
+    ].includes(roleId)
+  )
     throw new DiscordFailure("ROLE_NOT_ALLOWLISTED");
 }
 export function verifyGuild(config: DiscordConfig, guild: GuildState): void {
   if (
     guild.id !== config.DISCORD_GUILD_ID ||
-    guild.bot.id !== config.DISCORD_CLIENT_ID
+    guild.bot.id !== config.DISCORD_CLIENT_ID ||
+    (config.DISCORD_ENVIRONMENT === "test-guild" &&
+      guild.ownerId !== config.DISCORD_GUILD_OWNER_ID)
   )
     throw new DiscordFailure("GUILD_IDENTITY_MISMATCH");
   const everyone = guild.roles.find((role) => role.id === guild.id);
@@ -42,22 +51,27 @@ export function verifyGuild(config: DiscordConfig, guild: GuildState): void {
     if (!role || role.position <= highest)
       throw new DiscordFailure("PROTECTED_HIERARCHY_INVALID");
   }
-  for (const id of managedRoles(config)) {
+  for (const id of [
+    ...managedRoles(config),
+    ...(config.DISCORD_VERIFICATION_ENABLED
+      ? [config.DISCORD_FREE_MEMBER_ROLE_ID]
+      : []),
+  ]) {
     const role = guild.roles.find((item) => item.id === id);
     if (!role || role.managed || role.id === guild.id)
       throw new DiscordFailure("MANAGED_ROLE_INVALID");
     if (role.position >= highest)
       throw new DiscordFailure("VIP_HIERARCHY_INVALID");
+    if (
+      id !== config.DISCORD_FREE_MEMBER_ROLE_ID &&
+      role.name.toLowerCase() === "free member"
+    )
+      throw new DiscordFailure("PROTECTED_ROLE_CONFIGURED_AS_VIP");
     // Names are only an additional misconfiguration guard; authorization uses IDs.
     if (
-      [
-        "founder",
-        "staff",
-        "free member",
-        "bot integrations",
-        "dyno",
-        "ticket tool",
-      ].includes(role.name.toLowerCase())
+      ["founder", "staff", "bot integrations", "dyno", "ticket tool"].includes(
+        role.name.toLowerCase(),
+      )
     ) {
       throw new DiscordFailure("PROTECTED_ROLE_CONFIGURED_AS_VIP");
     }
