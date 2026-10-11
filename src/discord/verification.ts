@@ -165,6 +165,62 @@ export class MemberVerification {
           member.pending ?? null,
           true,
         );
+      // A previously incorrect guild/owner/role configuration can strand member
+      // jobs in dead_letter. Recover only those exact configuration errors after
+      // a fresh, successful Discord REST identity and hierarchy inspection.
+      // This is bounded and never grants roles itself; runOne rechecks every
+      // member and still enforces DRY_RUN, Rules Screening, bot exclusion and
+      // the production rollout allowlist.
+      const blocked = await db.query<{ blocked: boolean }>(
+        `SELECT EXISTS(
+          SELECT 1 FROM discord_member_jobs
+          WHERE guild_id=$1 AND status='dead_letter'
+          AND last_error_code IN ('GUILD_IDENTITY_MISMATCH','PROTECTED_HIERARCHY_INVALID')
+        ) AS blocked`,
+        [this.config.DISCORD_GUILD_ID],
+      );
+      if (blocked.rows[0]?.blocked) {
+        let safeToRecover = false;
+        try {
+          verifyGuild(this.config, await this.adapter.inspectGuild());
+          safeToRecover = true;
+        } catch (error) {
+          // Keep all dead letters intact until the owner fixes the actual
+          // configuration. Do not turn other Discord failures into success.
+          if (
+            !(error instanceof DiscordFailure) ||
+            !["GUILD_IDENTITY_MISMATCH", "PROTECTED_HIERARCHY_INVALID"].includes(error.code)
+          ) throw error;
+        }
+        if (safeToRecover) {
+          const recovered = await db.query<{ error_code: string }>(
+            `WITH selected AS (
+              SELECT guild_id, discord_user_id, last_error_code
+              FROM discord_member_jobs
+              WHERE guild_id=$1 AND status='dead_letter'
+              AND last_error_code IN ('GUILD_IDENTITY_MISMATCH','PROTECTED_HIERARCHY_INVALID')
+              ORDER BY updated_at, discord_user_id
+              LIMIT $2 FOR UPDATE SKIP LOCKED
+            )
+            UPDATE discord_member_jobs AS j SET
+              status='queued', attempt_count=0, available_at=clock_timestamp(),
+              lease_token=NULL, lease_expires_at=NULL, claimed_version=NULL,
+              last_error_code=NULL, updated_at=clock_timestamp()
+            FROM selected
+            WHERE j.guild_id=selected.guild_id
+              AND j.discord_user_id=selected.discord_user_id
+              AND j.status='dead_letter'
+            RETURNING selected.last_error_code AS error_code`,
+            [this.config.DISCORD_GUILD_ID, this.config.DISCORD_RECONCILE_BATCH_SIZE],
+          );
+          if (recovered.rowCount)
+            await discordAudit(db, "DISCORD_VERIFICATION_CONFIG_RECOVERED", null, {
+              recovered: recovered.rowCount,
+              previousErrors: [...new Set(recovered.rows.map((row) => row.error_code))],
+              dryRun: this.config.DISCORD_DRY_RUN,
+            });
+        }
+      }
       const finished =
         members.length < this.config.DISCORD_RECONCILE_BATCH_SIZE;
       await db.query(
