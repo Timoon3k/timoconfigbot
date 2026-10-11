@@ -96,6 +96,38 @@ describe("Gateway session boundaries", () => {
   });
 });
 
+describe("Ticket Tool passive channel observation", () => {
+  const guild = "200000000000000010";
+  const parent = "200000000000000011";
+  const allowed = loadDiscordConfig({
+    TICKET_TOOL_CHANNEL_OBSERVATION_ENABLED: "true",
+    TICKET_TOOL_DISCORD_CATEGORY_IDS: parent,
+    DISCORD_GUILD_ID: guild,
+  });
+  it("records only channels from an explicitly allowed Discord text category", async () => {
+    const handler = vi.fn().mockResolvedValue(undefined);
+    const dispatch = vi.fn().mockResolvedValue(undefined);
+    const session = new MemberGatewaySession(allowed, {
+      dispatch,
+    } as unknown as MemberVerification, handler);
+    await session.dispatch({ ...ready, d: { ...ready.d, guilds: [{ id: guild }] } });
+    const channel = { id: "200000000000000012", guild_id: guild, parent_id: parent, type: 0 };
+    await session.dispatch({ op: 0, t: "CHANNEL_CREATE", s: 2, d: channel });
+    await session.dispatch({ op: 0, t: "CHANNEL_CREATE", s: 3, d: { ...channel, id: "200000000000000013", parent_id: "200000000000000014" } });
+    await session.dispatch({ op: 0, t: "CHANNEL_CREATE", s: 4, d: { ...channel, id: "200000000000000015", type: 11 } });
+    expect(handler).toHaveBeenCalledOnce();
+    expect(handler).toHaveBeenCalledWith(channel);
+    expect(session.sequence).toBe(4);
+  });
+  it("remains disabled until an owner supplies a valid Discord category allowlist", () => {
+    expect(loadDiscordConfig({}).TICKET_TOOL_CHANNEL_OBSERVATION_ENABLED).toBe(false);
+    expect(() => loadDiscordConfig({ TICKET_TOOL_CHANNEL_OBSERVATION_ENABLED: "true" })).toThrow();
+    expect(() => loadDiscordConfig({
+      TICKET_TOOL_CHANNEL_OBSERVATION_ENABLED: "true",
+      TICKET_TOOL_DISCORD_CATEGORY_IDS: "not-an-id",
+    })).toThrow();
+  });
+});
 describe("Gateway connection lifecycle using an injected socket only", () => {
   it("resumes on reconnect, authenticates intent and shuts down cleanly", async () => {
     vi.useFakeTimers();
