@@ -98,7 +98,7 @@ describe("Gateway session boundaries", () => {
 
 describe("Ticket Tool passive channel observation", () => {
   const guild = "200000000000000010";
-  const parent = "200000000000000011";
+  const parent = "1558892807786209360";
   const allowed = loadDiscordConfig({
     TICKET_TOOL_CHANNEL_OBSERVATION_ENABLED: "true",
     TICKET_TOOL_DISCORD_CATEGORY_IDS: parent,
@@ -116,9 +116,11 @@ describe("Ticket Tool passive channel observation", () => {
     await session.dispatch({ op: 0, t: "CHANNEL_CREATE", s: 2, d: channel });
     await session.dispatch({ op: 0, t: "CHANNEL_CREATE", s: 3, d: { ...channel, id: "200000000000000013", parent_id: "200000000000000014" } });
     await session.dispatch({ op: 0, t: "CHANNEL_CREATE", s: 4, d: { ...channel, id: "200000000000000015", type: 11 } });
+    // General Support tickets must never enter the VIP purchase pipeline.
+    await session.dispatch({ op: 0, t: "CHANNEL_CREATE", s: 5, d: { ...channel, id: "200000000000000016", parent_id: "1557857668964687913" } });
     expect(handler).toHaveBeenCalledOnce();
     expect(handler).toHaveBeenCalledWith(channel);
-    expect(session.sequence).toBe(4);
+    expect(session.sequence).toBe(5);
   });
   it("remains disabled until an owner supplies a valid Discord category allowlist", () => {
     expect(loadDiscordConfig({}).TICKET_TOOL_CHANNEL_OBSERVATION_ENABLED).toBe(false);
