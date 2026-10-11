@@ -1,7 +1,7 @@
 import { z } from "zod";
 import type { DiscordConfig } from "./config.js";
 import { snowflake } from "./config.js";
-import { assertRole, verifyGuild } from "./policy.js";
+import { assertRole, freeMemberRolloutAllows, verifyGuild } from "./policy.js";
 import {
   DiscordFailure,
   type DiscordAdapter,
@@ -219,6 +219,12 @@ export class RestDiscordAdapter implements DiscordAdapter {
       throw new DiscordFailure("ROLE_ASSIGNMENT_RACE");
     if (method === "PUT" && current.pending !== false)
       throw new DiscordFailure("MEMBER_SCREENING_INCOMPLETE");
+    if (
+      method === "PUT" &&
+      roleId === this.config.DISCORD_FREE_MEMBER_ROLE_ID &&
+      !freeMemberRolloutAllows(this.config, memberId)
+    )
+      throw new DiscordFailure("FREE_MEMBER_ROLLOUT_RESTRICTED");
     if (
       method === "DELETE" &&
       roleId === this.config.DISCORD_FREE_MEMBER_ROLE_ID
