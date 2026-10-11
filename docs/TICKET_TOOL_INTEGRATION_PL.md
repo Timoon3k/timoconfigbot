@@ -46,7 +46,15 @@ Użytkownik chce BEZ ZMIANY obecnego bota Ticket Tool i jego panelu `Open Ticket
 4. Dodać `/vip-buy` jako fallback. Zarejestrować obok istniejących `/help`, `/membership`, `/sync-status` bez usuwania komend i bez omijania zgody read-only registration.
 5. W następnej kolejności po wyborze i weryfikacji Stripe: implementacja Checkout + Billing + webhook, dokumentacja w `docs/VIP_PAYMENTS_IMPLEMENTATION_PL.md`.
 
-## Potrzebne od właściciela
-- Discord **category ID**, do której Ticket Tool tworzy tickety `Open Ticket` na zakup VIP (warto oddzielić VIP Orders od Support).
+## Potwierdzona kategoria od właściciela
+- Discord guild: `1557854161805115402`.
+- Ticket Tool tworzy kanały `Open Ticket` pod kategorią Discord **Support**: `1557857668964687913`.
+- Nowa gałąź obsługuje `TICKET_TOOL_DISCORD_CATEGORY_IDS=1557857668964687913` i `TICKET_TOOL_CHANNEL_OBSERVATION_ENABLED=true`, ALE **obecna wersja tylko zapisuje kanał** do `discord_ticket_channels`. Nie publikuje jeszcze wyboru pakietu, nie uruchamia Stripe i nie nadaje VIP.
+- Ta kategoria może również zawierać zwykłe zgłoszenia wsparcia. Docelowo wiadomość powinna zawierać dobrowolny wybór `VIP Purchase` albo wykrywać wyłącznie tickety zakupowe. Nie wymagać płatności w każdym tickecie i nie rozpoczynać Checkout bez kliknięcia właściciela podpisanej interakcji.
+- **Nie zmieniać jeszcze aktywnych zmiennych Hostingera.** Nowy kod wymaga wcześniejszego uruchomienia migracji `004_discord_ticket_channels.up.sql` po testach i zatwierdzeniu.
+- Bot musi otrzymywać `CHANNEL_CREATE` i widzieć prywatny kanał; Ticket Tool może zastosować nadpisania uprawnień, które ukryją kanał przed TimonConfigs. Najpierw sprawdzić uprawnienia `View Channel` i dla przyszłych wiadomości `Send Messages` oraz `Embed Links` w ticket channel, bez nadawania Administrator.
+- Free Member pozostaje działające na produkcji, nie włączać VIP sync ani realnych płatności przed audytem.
+ 
+## Pozostałe informacje do potwierdzenia
 - Czy Ticket Tool jest Free/Community/Pro? Nie przeszkadza to Gateway, ale determinuje możliwą alternatywę webhookową.
 - Stripe weryfikacja osoby/merchant, odpowiedź Stripe dotycząca akceptacji rzeczywistej oferty i PayPal recurring (bez przesyłania sekretów).
