@@ -52,6 +52,8 @@ describe("production deployment gates", () => {
       DISCORD_DRY_RUN: "false",
       DISCORD_VERIFICATION_ENABLED: "true",
       DISCORD_FREE_MEMBER_WRITES_APPROVED: "true",
+      DISCORD_FREE_MEMBER_ROLLOUT_MODE: "canary",
+      DISCORD_FREE_MEMBER_CANARY_IDS: "200000000000000001",
       DISCORD_FREE_MEMBER_APPROVAL_REFERENCE: "separate-free-member-approval",
     });
     expect(() =>
@@ -76,6 +78,8 @@ describe("production deployment gates", () => {
         DISCORD_DRY_RUN: "false",
         DISCORD_VERIFICATION_ENABLED: "true",
         DISCORD_FREE_MEMBER_WRITES_APPROVED: "true",
+        DISCORD_FREE_MEMBER_ROLLOUT_MODE: "canary",
+        DISCORD_FREE_MEMBER_CANARY_IDS: "200000000000000001",
         DISCORD_FREE_MEMBER_APPROVAL_REFERENCE:
           production.DISCORD_APPROVAL_REFERENCE,
       }),

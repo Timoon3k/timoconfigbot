@@ -166,6 +166,62 @@ describe("Free Member production mutation boundary (offline transport)", () => {
     ).rejects.toMatchObject({ code: "FREE_MEMBER_ROLLOUT_RESTRICTED" });
     expect(writes(f.request)).toEqual([]);
   });
+  it.each([memberId, "200000000000000002", "200000000000000003"])(
+    "limits two-account canary writes for %s", async (id) => {
+      const f = fixture({ id, roles: [], pending: false }, {
+        DISCORD_FREE_MEMBER_CANARY_IDS: `${memberId},200000000000000002`,
+      });
+      const attempt = f.adapter.addRole(id, f.config.DISCORD_FREE_MEMBER_ROLE_ID);
+      if (id === "200000000000000003") {
+        await expect(attempt).rejects.toMatchObject({ code: "FREE_MEMBER_ROLLOUT_RESTRICTED" });
+        expect(writes(f.request)).toEqual([]);
+      } else {
+        await attempt;
+        expect(writes(f.request)).toHaveLength(1);
+      }
+    },
+  );
+  it.each([approved.DISCORD_APPROVAL_REFERENCE, approved.DISCORD_FREE_MEMBER_APPROVAL_REFERENCE])(
+    "rejects reuse of an earlier approval for all-member writes: %s", (reference) => {
+      expect(() => loadDiscordConfig({
+        ...approved,
+        DISCORD_FREE_MEMBER_ROLLOUT_MODE: "all",
+        DISCORD_FREE_MEMBER_CANARY_IDS: "",
+        DISCORD_FREE_MEMBER_ALL_APPROVAL_REFERENCE: reference,
+      })).toThrow();
+    },
+  );
+  it("allows a verified non-canary human only with separately approved all-member mode", async () => {
+    const id = "200000000000000003";
+    const f = fixture({ id, roles: [], pending: false }, {
+      DISCORD_FREE_MEMBER_ROLLOUT_MODE: "all",
+      DISCORD_FREE_MEMBER_CANARY_IDS: "",
+      DISCORD_FREE_MEMBER_ALL_APPROVAL_REFERENCE: "fixture-all-member-approval",
+    });
+    await f.adapter.addRole(id, f.config.DISCORD_FREE_MEMBER_ROLE_ID);
+    expect(writes(f.request)).toHaveLength(1);
+  });
+  it.each(["", "invalid-id", "100000000000000002", "900000000000000001"])(
+    "rejects invalid or empty canary IDs: %s", (ids) => {
+      expect(() => loadDiscordConfig({ ...approved, DISCORD_FREE_MEMBER_CANARY_IDS: ids })).toThrow();
+    },
+  );
+  it("defaults production rollout to disabled with no canary IDs or all-member approval", () => {
+    const config = loadDiscordConfig({
+      ...approved,
+      DISCORD_DRY_RUN: undefined,
+      DISCORD_WRITES_ENABLED: undefined,
+      DISCORD_FREE_MEMBER_WRITES_APPROVED: undefined,
+      DISCORD_FREE_MEMBER_ROLLOUT_MODE: undefined,
+      DISCORD_FREE_MEMBER_CANARY_IDS: undefined,
+    });
+    expect(config.DISCORD_DRY_RUN).toBe(true);
+    expect(config.DISCORD_WRITES_ENABLED).toBe(false);
+    expect(config.DISCORD_FREE_MEMBER_WRITES_APPROVED).toBe(false);
+    expect(config.DISCORD_FREE_MEMBER_ROLLOUT_MODE).toBe("disabled");
+    expect(config.DISCORD_FREE_MEMBER_CANARY_IDS).toEqual([]);
+    expect(config.DISCORD_FREE_MEMBER_ALL_APPROVAL_REFERENCE).toBeUndefined();
+  });
   it("blocks unapproved non-canary role operations before writing audit records", async () => {
     const other = "200000000000000002";
     const f = fixture({ id: other, roles: [], pending: false });
