@@ -32,6 +32,11 @@ const schema = z
     DISCORD_OWNER_APPROVED: flag("false"),
     DISCORD_APPROVAL_REFERENCE: z.string().min(8).max(200).optional(),
     DISCORD_GATEWAY_ENABLED: flag("false"),
+    // Passive Ticket Tool channel detection: never sends a message or grants roles.
+    TICKET_TOOL_CHANNEL_OBSERVATION_ENABLED: flag("false"),
+    TICKET_TOOL_DISCORD_CATEGORY_IDS: z.string().default("").transform((value) =>
+      value.trim() ? value.split(",").map((id) => id.trim()) : [],
+    ),
     DISCORD_COMMANDS_ENABLED: flag("false"),
     DISCORD_VERIFICATION_ENABLED: flag("false"),
     DISCORD_VIP_SYNC_ENABLED: flag("true"),
@@ -107,6 +112,17 @@ const schema = z
       ctx.addIssue({
         code: "custom",
         message: "Discord IDs must be distinct.",
+      });
+    const ticketCategoryIds = config.TICKET_TOOL_DISCORD_CATEGORY_IDS;
+    if (
+      ticketCategoryIds.length > 10 ||
+      ticketCategoryIds.some((id) => !snowflake.safeParse(id).success) ||
+      new Set(ticketCategoryIds).size !== ticketCategoryIds.length ||
+      (config.TICKET_TOOL_CHANNEL_OBSERVATION_ENABLED && ticketCategoryIds.length === 0)
+    )
+      ctx.addIssue({
+        code: "custom",
+        message: "Ticket observation requires one to ten distinct Discord category IDs.",
       });
     const canaryIds = config.DISCORD_FREE_MEMBER_CANARY_IDS;
     if (
