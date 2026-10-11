@@ -4,7 +4,7 @@ import type { DatabaseClient, DatabasePool } from "../db/pool.js";
 import { inTransaction } from "../db/pool.js";
 import { discordAudit } from "./audit.js";
 import { snowflake, type DiscordConfig } from "./config.js";
-import { verifyGuild } from "./policy.js";
+import { freeMemberRolloutAllows, verifyGuild } from "./policy.js";
 import { RoleOperations } from "./operations.js";
 import { DiscordFailure, type DiscordAdapter } from "./types.js";
 import type { DiscordSyncService } from "./sync.js";
@@ -224,20 +224,24 @@ export class MemberVerification {
         const member = await this.adapter.getMember(job.discord_user_id);
         if (member && member.id !== job.discord_user_id)
           throw new DiscordFailure("MEMBER_IDENTITY_MISMATCH");
-        const shouldAdd =
+        const eligibleWithoutRollout =
           member?.pending === false &&
           !member.bot &&
           member.id !== this.config.DISCORD_CLIENT_ID &&
           !member.roles.includes(this.config.DISCORD_FREE_MEMBER_ROLE_ID);
+        const rolloutAllowed = freeMemberRolloutAllows(this.config, job.discord_user_id);
+        const shouldAdd = eligibleWithoutRollout && rolloutAllowed;
         const outcome = !member
           ? "member_absent"
           : member.bot || member.id === this.config.DISCORD_CLIENT_ID
             ? "bot_excluded"
             : member.pending !== false
               ? "screening_pending_or_unknown"
-              : !shouldAdd
+              : !eligibleWithoutRollout
                 ? "noop"
-                : this.config.DISCORD_DRY_RUN
+                : !rolloutAllowed
+                  ? "rollout_excluded"
+                  : this.config.DISCORD_DRY_RUN
                   ? "preview"
                   : "applied";
         await discordAudit(this.pool, "DISCORD_VERIFICATION_PLANNED", null, {
