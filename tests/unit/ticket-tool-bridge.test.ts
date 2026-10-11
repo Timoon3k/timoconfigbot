@@ -37,8 +37,8 @@ describe("Ticket Tool event authentication (pure, no network)", () => {
 
 describe("Ticket Tool candidate channel filtering (no mutations)", () => {
   const guildId = "1557854161805115402";
-  // Verified Support category selected by the guild owner for Ticket Tool.
-  const categoryId = "200000000000000001";
+  // Verified VIP Orders category. Existing Support category must be excluded.
+  const categoryId = "1558892807786209360";
   const channelId = "200000000000000002";
   const channel = { id: channelId, guild_id: guildId, parent_id: categoryId, type: 0 };
   it("requires an exact guild and ticket category allowlist", () => {
@@ -46,6 +46,7 @@ describe("Ticket Tool candidate channel filtering (no mutations)", () => {
     expect(isAllowlistedTicketChannel(channel, guildId, new Set())).toBe(false);
     expect(isAllowlistedTicketChannel(channel, "200000000000000003", new Set([categoryId]))).toBe(false);
     expect(isAllowlistedTicketChannel({ ...channel, parent_id: "200000000000000004" }, guildId, new Set([categoryId]))).toBe(false);
+    expect(isAllowlistedTicketChannel({ ...channel, parent_id: "1557857668964687913" }, guildId, new Set([categoryId]))).toBe(false);
   });
   it("rejects DM, threads and spoofed/non-snowflake channels", () => {
     expect(isAllowlistedTicketChannel({ ...channel, type: 11 }, guildId, new Set([categoryId]))).toBe(false);
