@@ -201,6 +201,20 @@ describe("Free Member production mutation boundary (offline transport)", () => {
     await f.adapter.addRole(id, f.config.DISCORD_FREE_MEMBER_ROLE_ID);
     expect(writes(f.request)).toHaveLength(1);
   });
+  it.each(["=", "DISCORD_FREE_MEMBER_CANARY_IDS=", "not-an-id", "12", "12345678901234567x"])(
+    "reports malformed canary IDs with a validation error, not a BigInt SyntaxError: %s",
+    (ids) => {
+      let caught: unknown;
+      try {
+        loadDiscordConfig({ ...approved, DISCORD_FREE_MEMBER_CANARY_IDS: ids });
+      } catch (error) {
+        caught = error;
+      }
+      expect(caught).toBeDefined();
+      expect(caught).not.toBeInstanceOf(SyntaxError);
+      expect(caught).toMatchObject({ name: "ZodError" });
+    },
+  );
   it.each(["", "invalid-id", "100000000000000002", "900000000000000001"])(
     "rejects invalid or empty canary IDs: %s", (ids) => {
       expect(() => loadDiscordConfig({ ...approved, DISCORD_FREE_MEMBER_CANARY_IDS: ids })).toThrow();
