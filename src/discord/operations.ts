@@ -4,7 +4,7 @@ import { inTransaction } from "../db/pool.js";
 import { discordAudit } from "./audit.js";
 import type { DiscordConfig } from "./config.js";
 import { assertTestGuildWrites } from "./rest.js";
-import { assertRole } from "./policy.js";
+import { assertRole, freeMemberRolloutAllows } from "./policy.js";
 import { DiscordFailure, type DiscordAdapter } from "./types.js";
 
 /** Callers hold the member advisory lock and (for VIP) the membership user row lock. */
@@ -24,6 +24,12 @@ export class RoleOperations {
   ): Promise<void> {
     assertTestGuildWrites(this.config, roleId);
     assertRole(this.config, roleId);
+    if (
+      operation === "add" &&
+      roleId === this.config.DISCORD_FREE_MEMBER_ROLE_ID &&
+      !freeMemberRolloutAllows(this.config, memberId)
+    )
+      throw new DiscordFailure("FREE_MEMBER_ROLLOUT_RESTRICTED");
     if (this.adapter.kind !== "rest")
       throw new DiscordFailure("LIVE_ADAPTER_REQUIRED");
     if (operation === "remove") {
