@@ -34,6 +34,8 @@ const schema = z
     DISCORD_GATEWAY_ENABLED: flag("false"),
     // Passive Ticket Tool channel detection: never sends a message or grants roles.
     TICKET_TOOL_CHANNEL_OBSERVATION_ENABLED: flag("false"),
+    // Existing general-support Discord category; it must never trigger VIP checkout.
+    TICKET_TOOL_SUPPORT_DISCORD_CATEGORY_ID: snowflake.optional(),
     TICKET_TOOL_DISCORD_CATEGORY_IDS: z.string().default("").transform((value) =>
       value.trim() ? value.split(",").map((id) => id.trim()) : [],
     ),
@@ -118,11 +120,14 @@ const schema = z
       ticketCategoryIds.length > 10 ||
       ticketCategoryIds.some((id) => !snowflake.safeParse(id).success) ||
       new Set(ticketCategoryIds).size !== ticketCategoryIds.length ||
-      (config.TICKET_TOOL_CHANNEL_OBSERVATION_ENABLED && ticketCategoryIds.length === 0)
+      (config.TICKET_TOOL_CHANNEL_OBSERVATION_ENABLED && ticketCategoryIds.length === 0) ||
+      (config.TICKET_TOOL_CHANNEL_OBSERVATION_ENABLED && !config.TICKET_TOOL_SUPPORT_DISCORD_CATEGORY_ID) ||
+      (config.TICKET_TOOL_SUPPORT_DISCORD_CATEGORY_ID !== undefined &&
+        ticketCategoryIds.includes(config.TICKET_TOOL_SUPPORT_DISCORD_CATEGORY_ID))
     )
       ctx.addIssue({
         code: "custom",
-        message: "Ticket observation requires one to ten distinct Discord category IDs.",
+        message: "Ticket observation requires a distinct VIP channel category, never the general Support category.",
       });
     const canaryIds = config.DISCORD_FREE_MEMBER_CANARY_IDS;
     if (
