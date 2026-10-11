@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { loadDiscordConfig } from "../../src/discord/config.js";
 import { ApprovedDiscordHttpsTransport, PostgresDiscordRateGate } from "../../src/discord/transport.js";
+import { slashCommands } from "../../src/discord/commands.js";
 
 const approved = {
   NODE_ENV: "production",
@@ -35,10 +36,15 @@ describe("production slash command transport boundary (network mocked)", () => {
       const result = await transport.request(commandPath, {
         method: "PUT",
         headers: { Authorization: "Bot fixture-token", "Content-Type": "application/json" },
-        body: "[]",
+        body: JSON.stringify(slashCommands),
       });
       expect(result.status).toBe(200);
       expect(fetchMock).toHaveBeenCalledTimes(1);
+      await expect(transport.request(commandPath, {
+        method: "PUT",
+        headers: { Authorization: "Bot fixture-token" },
+        body: "[]",
+      })).rejects.toMatchObject({ code: "COMMAND_DEFINITIONS_NOT_APPROVED" });
       await expect(transport.request(
         `/api/v10/guilds/${config.DISCORD_GUILD_ID}/members/200000000000000001/roles/${config.DISCORD_VIP_MONTHLY_ROLE_ID}`,
         { method: "PUT", headers: { Authorization: "Bot fixture-token" } },
@@ -66,6 +72,6 @@ describe("production slash command transport boundary (network mocked)", () => {
       `/api/v10/applications/${config.DISCORD_CLIENT_ID}/guilds/${config.DISCORD_GUILD_ID}/commands`,
       { method: "PUT", headers: { Authorization: "Bot fixture-token" } },
     )).rejects.toThrow();
-    expect((gate.reserve as ReturnType<typeof vi.fn>)).not.toHaveBeenCalled();
+    expect(gate.reserve).not.toHaveBeenCalled();
   });
 });
