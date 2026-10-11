@@ -379,7 +379,7 @@ describe("Signed VIP buttons", () => {
       Buffer.concat([Buffer.from(timestamp), payload]),
       keys.privateKey,
     ).toString("hex");
-    const commands = { handleTicket } as unknown as DiscordCommands;
+    const commands = { handleTicket, billingEnabled: () => false } as unknown as DiscordCommands;
     await verifiedInteraction(
       payload,
       signature,

@@ -40,7 +40,7 @@ const supervisor = new DiscordSupervisor(
       config.SESSION_PEPPER,
     );
     return {
-      worker: new DiscordWorker(runtime.sync, runtime.verification, runtime.tickets),
+      worker: new DiscordWorker(runtime.sync, runtime.verification, runtime.tickets, runtime.billingWorker),
       gateway: runtime.gateway,
     };
   },

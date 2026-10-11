@@ -3,6 +3,7 @@ import { setTimeout as delay } from "node:timers/promises";
 import type { MemberVerification } from "./verification.js";
 import type { DiscordSyncService } from "./sync.js";
 import type { TicketService } from "../tickets/service.js";
+import type { BillingWorker } from "../billing/roles.js";
 
 export class DiscordWorker {
   public lastCompletedAt: number | null = null;
@@ -13,6 +14,7 @@ export class DiscordWorker {
   private lastFailureSignature = "";
   private lastFailureLoggedAt = 0;
   private suppressedFailures = 0;
+  private billingTask: Promise<void> | null = null;
 
   // Do not print exception messages/stacks: provider errors can contain secrets.
   private reportTickFailure(error: unknown): void {
@@ -53,11 +55,13 @@ export class DiscordWorker {
     private readonly sync: DiscordSyncService,
     private readonly verification?: MemberVerification,
     private readonly tickets?: TicketService,
+    private readonly billing?: BillingWorker,
   ) {}
   public stop(): void {
     this.stopping = true;
     this.controller.abort();
   }
+  public async drainBilling(): Promise<void> { await this.billingTask; }
   public async tick(): Promise<number> {
     this.stage = "heartbeat";
     await this.sync.pool.query(
@@ -97,6 +101,13 @@ export class DiscordWorker {
     } catch (error) {
       this.reportTickFailure(error);
     }
+    // Stripe latency must not delay Rules Screening, heartbeat or Free Member jobs.
+    // One optional task per worker; its durable queues coordinate other processes.
+    if (this.billing && !this.billingTask && !this.stopping) {
+      this.billingTask = this.billing.tick().then(() => undefined).catch(() => {
+        process.stderr.write(JSON.stringify({ event: "billing_worker_failed" }) + "\n");
+      }).finally(() => { this.billingTask = null; });
+    }
     this.lastCompletedAt = Date.now();
     this.stage = "idle";
     return count;
@@ -123,6 +134,7 @@ export class DiscordWorker {
         }).catch(() => undefined);
       }
     } finally {
+      await this.drainBilling();
       await this.sync.pool.query("DELETE FROM discord_runtime WHERE name=$1", [
         `worker:${this.sync.config.DISCORD_GUILD_ID}:${this.id}`,
       ]);

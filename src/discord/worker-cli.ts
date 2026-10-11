@@ -12,13 +12,13 @@ const auth = new AuthService(
   config.PASSWORD_PEPPER,
   config.SESSION_PEPPER,
 );
-const { sync, verification, gateway, tickets } = createDiscordRuntime(
+const { sync, verification, gateway, tickets, billingWorker } = createDiscordRuntime(
   pool,
   auth,
   new MembershipService(pool,config.NODE_ENV !== "production"),
   config.SESSION_PEPPER,
 );
-const worker = new DiscordWorker(sync, verification, tickets);
+const worker = new DiscordWorker(sync, verification, tickets, billingWorker);
 const stop = () => {
   worker.stop();
   gateway?.stop();

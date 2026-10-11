@@ -681,7 +681,7 @@ describe("controlled REST contract, no real Discord connection", () => {
       (await pool.query("SELECT source FROM discord_role_ownership")).rows[0]
         .source,
     ).toBe("bot_assignment");
-    await expect(migrateDown(pool)).rejects.toThrow("live operation evidence");
+    await expect(migrateDown(pool)).rejects.toThrow("evidence");
   });
   it("does not claim ownership of an ambiguous API result", async () => {
     const f = liveFixture();

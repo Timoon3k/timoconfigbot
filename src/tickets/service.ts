@@ -241,23 +241,7 @@ export class TicketService {
           ? "VIP_LIFETIME"
           : null;
     if (!product) throw new DiscordFailure("TICKET_PRODUCT_INVALID");
-    const job = (
-      await this.pool.query<{ message_id: string }>(
-        "SELECT message_id FROM discord_ticket_welcome_jobs WHERE guild_id=$1 AND channel_id=$2 AND status='sent'",
-        [input.guildId, input.channelId],
-      )
-    ).rows[0];
-    if (!job || job.message_id !== input.messageId)
-      throw new DiscordFailure("TICKET_PANEL_IDENTITY_MISMATCH");
-    const { channel, roles } = await this.rest.inspect(input.channelId);
-    const member = await this.rest.member(input.memberId);
-    if (
-      member.user.bot ||
-      member.user.id === this.config.DISCORD_CLIENT_ID ||
-      member.pending !== false ||
-      !(channelPermissions(channel, roles, member) & VIEW)
-    )
-      throw new DiscordFailure("TICKET_BUYER_NOT_ELIGIBLE");
+    await this.authorizeBuyer(input);
     await inTransaction(this.pool, async (db) => {
       await db.query("SELECT pg_advisory_xact_lock(hashtextextended($1,0))", [
         `ticket-buyer:${input.memberId}`,
@@ -275,18 +259,10 @@ export class TicketService {
         throw new DiscordFailure("TICKET_SELECTION_RATE_LIMITED");
       await db.query(
         `INSERT INTO discord_ticket_selections(interaction_id,guild_id,channel_id,discord_user_id,product_code) VALUES($1,$2,$3,$4,$5)`,
-        [
-          input.interactionId,
-          input.guildId,
-          input.channelId,
-          input.memberId,
-          product,
-        ],
+        [input.interactionId,input.guildId,input.channelId,input.memberId,product],
       );
       await discordAudit(db, "VIP_TICKET_PRODUCT_SELECTED", null, {
-        channelId: input.channelId,
-        discordUserId: input.memberId,
-        product,
+        channelId: input.channelId, discordUserId: input.memberId, product,
         interactionId: input.interactionId,
       });
     });
@@ -298,5 +274,30 @@ export class TicketService {
         content: `${product === "VIP_MONTHLY_AUTO" ? "VIP Monthly — EUR 40/month, auto-renewal." : "VIP Lifetime — EUR 100, one-time payment."} Selection recorded. Payments are not enabled. No charge or VIP role has been created.`,
       },
     };
+  }
+  /** Fresh ticket and member proof shared by selection, confirmation and principal-owned Portal. */
+  public async authorizeBuyer(input: {
+    guildId: string; channelId: string; memberId: string; messageId: string;
+  }, requirePanel = true): Promise<void> {
+    if (!this.config.TICKET_TOOL_SELECTIONS_ENABLED || input.guildId !== this.config.DISCORD_GUILD_ID)
+      throw new DiscordFailure("TICKET_SELECTIONS_NOT_ENABLED");
+    [input.channelId, input.memberId, input.messageId].forEach(id => snowflake.parse(id));
+    const job = (
+      await this.pool.query<{ message_id: string }>(
+        "SELECT message_id FROM discord_ticket_welcome_jobs WHERE guild_id=$1 AND channel_id=$2 AND status='sent'",
+        [input.guildId, input.channelId],
+      )
+    ).rows[0];
+    if (!job || (requirePanel && job.message_id !== input.messageId))
+      throw new DiscordFailure("TICKET_PANEL_IDENTITY_MISMATCH");
+    const { channel, roles } = await this.rest.inspect(input.channelId);
+    const member = await this.rest.member(input.memberId);
+    if (
+      member.user.bot ||
+      member.user.id === this.config.DISCORD_CLIENT_ID ||
+      member.pending !== false ||
+      !(channelPermissions(channel, roles, member) & VIEW)
+    )
+      throw new DiscordFailure("TICKET_BUYER_NOT_ELIGIBLE");
   }
 }
