@@ -9,6 +9,7 @@ import {
 } from "./rest.js";
 import { DiscordFailure } from "./types.js";
 import { assertRole } from "./policy.js";
+import { slashCommands } from "./commands.js";
 import { assertProductionReadOnlyCommandRegistration } from "./command-policy.js";
 
 /** Shared across processes and all guild REST routes: deliberately conservative. */
@@ -89,8 +90,12 @@ export class ApprovedDiscordHttpsTransport implements HttpTransport {
       // Command registration changes Discord's command definitions, not member roles.
       // Production command permission is deliberately independent from live role writes.
       if (path === commands) {
-        if (this.config.DISCORD_ENVIRONMENT === "production")
+        if (this.config.DISCORD_ENVIRONMENT === "production") {
           assertProductionReadOnlyCommandRegistration(this.config);
+          // Never authorize arbitrary slash commands through this path.
+          if (init.body !== JSON.stringify(slashCommands))
+            throw new DiscordFailure("COMMAND_DEFINITIONS_NOT_APPROVED");
+        }
         else assertTestGuildWrites(this.config);
       } else if (this.config.DISCORD_DRY_RUN || !this.config.DISCORD_WRITES_ENABLED)
         throw new DiscordFailure("LIVE_MUTATIONS_NOT_APPROVED");
