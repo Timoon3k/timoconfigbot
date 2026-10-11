@@ -8,6 +8,10 @@ import {
 import { databasePoolOptions } from "../../src/db/pool.js";
 import { mockGuild } from "../../src/discord/adapters.js";
 import { verifyGuild } from "../../src/discord/policy.js";
+import { assertProductionReadOnlyCommandRegistration } from "../../src/discord/command-policy.js";
+import { DiscordCommands } from "../../src/discord/commands.js";
+import type { DatabasePool } from "../../src/db/pool.js";
+import type { MembershipService } from "../../src/membership/service.js";
 const production = {
   NODE_ENV: "production",
   DISCORD_ENVIRONMENT: "production",
@@ -84,6 +88,64 @@ describe("production deployment gates", () => {
           production.DISCORD_APPROVAL_REFERENCE,
       }),
     ).toThrow();
+  });
+  it("keeps slash-command approval separate from Free Member and VIP role writes", async () => {
+    const enabled = {
+      ...production,
+      DISCORD_READONLY_COMMANDS_ENABLED: "true",
+      DISCORD_READONLY_COMMAND_REGISTRATION_APPROVED: "true",
+      DISCORD_READONLY_COMMAND_APPROVAL_REFERENCE: "approved-readonly-commands",
+    };
+    const c = loadDiscordConfig(enabled);
+    expect(() => assertProductionReadOnlyCommandRegistration(c)).not.toThrow();
+    expect(c.DISCORD_COMMANDS_ENABLED).toBe(false);
+    expect(c.DISCORD_VIP_SYNC_ENABLED).toBe(false);
+    expect(c.DISCORD_PRODUCTION_VIP_WRITES_ENABLED).toBe(false);
+    expect(() => assertTestGuildWrites(c, c.DISCORD_FREE_MEMBER_ROLE_ID)).toThrow();
+    expect(() => assertTestGuildWrites(c, c.DISCORD_VIP_MONTHLY_ROLE_ID)).toThrow();
+
+    const query = vi.fn();
+    const commands = new DiscordCommands(
+      { query } as unknown as DatabasePool,
+      {} as MembershipService,
+      c,
+    );
+    const help = await commands.handle(c.DISCORD_GUILD_ID, "200000000000000001", "help");
+    expect(help.data.flags).toBe(64);
+    expect(help.data.content).toContain("Free Member");
+    expect(query).not.toHaveBeenCalled();
+  });
+  it.each([
+    { DISCORD_READONLY_COMMANDS_ENABLED: "true" },
+    {
+      DISCORD_READONLY_COMMANDS_ENABLED: "true",
+      DISCORD_READONLY_COMMAND_REGISTRATION_APPROVED: "true",
+    },
+    {
+      DISCORD_READONLY_COMMANDS_ENABLED: "true",
+      DISCORD_READONLY_COMMAND_REGISTRATION_APPROVED: "true",
+      DISCORD_READONLY_COMMAND_APPROVAL_REFERENCE: "read-only-owner-approval",
+    },
+  ])("fails closed on incomplete or reused production command approval %j", (override) => {
+    expect(() => loadDiscordConfig({ ...production, ...override })).toThrow();
+  });
+  it("read-only commands can coexist with already approved live Free Member writes", () => {
+    const c = loadDiscordConfig({
+      ...production,
+      DISCORD_WRITES_ENABLED: "true",
+      DISCORD_DRY_RUN: "false",
+      DISCORD_VERIFICATION_ENABLED: "true",
+      DISCORD_FREE_MEMBER_WRITES_APPROVED: "true",
+      DISCORD_FREE_MEMBER_APPROVAL_REFERENCE: "approved-free-member-live",
+      DISCORD_FREE_MEMBER_ROLLOUT_MODE: "all",
+      DISCORD_FREE_MEMBER_ALL_APPROVAL_REFERENCE: "approved-all-members-live",
+      DISCORD_READONLY_COMMANDS_ENABLED: "true",
+      DISCORD_READONLY_COMMAND_REGISTRATION_APPROVED: "true",
+      DISCORD_READONLY_COMMAND_APPROVAL_REFERENCE: "approved-readonly-commands",
+    });
+    expect(() => assertProductionReadOnlyCommandRegistration(c)).not.toThrow();
+    expect(() => assertTestGuildWrites(c, c.DISCORD_FREE_MEMBER_ROLE_ID)).not.toThrow();
+    expect(() => assertTestGuildWrites(c, c.DISCORD_VIP_LIFETIME_ROLE_ID)).toThrow();
   });
   it("verifies both actual production guild and owner", () => {
     const c = loadDiscordConfig(production);
