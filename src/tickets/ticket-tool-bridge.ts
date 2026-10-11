@@ -65,6 +65,8 @@ export const ticketChannel = z.object({
   type: z.literal(0),
 });
 
+export type TicketChannel = z.infer<typeof ticketChannel>;
+
 /**
  * Guild channel creation cannot prove who opened a Ticket Tool ticket.
  * Exact allowlisting only identifies a candidate ticket channel.
