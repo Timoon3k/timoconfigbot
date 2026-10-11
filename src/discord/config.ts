@@ -33,6 +33,10 @@ const schema = z
     DISCORD_APPROVAL_REFERENCE: z.string().min(8).max(200).optional(),
     DISCORD_GATEWAY_ENABLED: flag("false"),
     DISCORD_COMMANDS_ENABLED: flag("false"),
+    // Separate, read-only slash-command feature; never authorizes role mutations.
+    DISCORD_READONLY_COMMANDS_ENABLED: flag("false"),
+    DISCORD_READONLY_COMMAND_REGISTRATION_APPROVED: flag("false"),
+    DISCORD_READONLY_COMMAND_APPROVAL_REFERENCE: z.string().min(8).max(200).optional(),
     DISCORD_VERIFICATION_ENABLED: flag("false"),
     DISCORD_VIP_SYNC_ENABLED: flag("true"),
     DISCORD_FREE_MEMBER_ROLE_ID: snowflake.default("100000000000000008"),
@@ -135,6 +139,24 @@ const schema = z
         code: "custom",
         message: "Production writes require a restricted canary or a separate, documented approval for all members.",
       });
+    if (
+      config.DISCORD_ENVIRONMENT === "production" &&
+      config.DISCORD_READONLY_COMMANDS_ENABLED &&
+      (!config.DISCORD_READONLY_COMMAND_REGISTRATION_APPROVED ||
+        !config.DISCORD_READONLY_COMMAND_APPROVAL_REFERENCE ||
+        [
+          config.DISCORD_APPROVAL_REFERENCE,
+          config.DISCORD_FREE_MEMBER_APPROVAL_REFERENCE,
+          config.DISCORD_FREE_MEMBER_ALL_APPROVAL_REFERENCE,
+        ].includes(config.DISCORD_READONLY_COMMAND_APPROVAL_REFERENCE) ||
+        config.DISCORD_COMMANDS_ENABLED ||
+        !config.DISCORD_NETWORK_ENABLED ||
+        !config.DISCORD_INTERACTIONS_PUBLIC_KEY)
+    )
+      ctx.addIssue({
+        code: "custom",
+        message: "Production read-only commands require separate registration approval, a distinct reference and signed interactions.",
+      });
     const redirect = new URL(config.DISCORD_OAUTH_REDIRECT_URI);
     if (
       redirect.username ||
@@ -159,7 +181,8 @@ const schema = z
       config.DISCORD_NETWORK_ENABLED ||
       config.DISCORD_ADAPTER !== "mock" ||
       config.DISCORD_GATEWAY_ENABLED ||
-      config.DISCORD_COMMANDS_ENABLED;
+      config.DISCORD_COMMANDS_ENABLED ||
+      config.DISCORD_READONLY_COMMANDS_ENABLED;
     if (config.DISCORD_ENVIRONMENT === "offline" && active)
       ctx.addIssue({
         code: "custom",
@@ -234,6 +257,7 @@ export function loadDiscordConfig(
     "DISCORD_PRODUCTION_GUILD_ID",
     "DISCORD_FREE_MEMBER_APPROVAL_REFERENCE",
     "DISCORD_FREE_MEMBER_ALL_APPROVAL_REFERENCE",
+    "DISCORD_READONLY_COMMAND_APPROVAL_REFERENCE",
     "DISCORD_GUILD_OWNER_ID",
     "DISCORD_APPROVAL_REFERENCE",
   ])
