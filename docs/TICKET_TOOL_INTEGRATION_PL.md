@@ -48,19 +48,19 @@ Użytkownik chce BEZ ZMIANY obecnego bota Ticket Tool i jego panelu `Open Ticket
 
 ## Potwierdzona kategoria od właściciela
 - Discord guild: `1557854161805115402`.
-- Ticket Tool tworzy obecne ogólne kanały `Open Ticket` pod kategorią Discord **Support**: `1557857668964687913`. Zachowujemy je WYŁĄCZNIE do pomocy. Nowa, odrębna kategoria Discord **VIP Orders** musi zostać utworzona przez właściciela i otrzyma nowy ID.
-- Konfiguracja rozdziału to `TICKET_TOOL_SUPPORT_DISCORD_CATEGORY_ID=1557857668964687913`, `TICKET_TOOL_DISCORD_CATEGORY_IDS=<NEW_VIP_ORDERS_DISCORD_CATEGORY_ID>`, `TICKET_TOOL_CHANNEL_OBSERVATION_ENABLED=true` (dopiero po wdrożeniu, migracji i testach). Kod odrzuca konfigurację wskazującą Support jako kategorię zakupową. **Obecna wersja tylko zapisuje nowe kanały VIP Orders** do `discord_ticket_channels`; nie publikuje jeszcze pakietów, nie uruchamia Stripe i nie nadaje VIP.
+- Ticket Tool tworzy obecne ogólne kanały `Open Ticket` pod kategorią Discord **Support**: `1557857668964687913`. Zachowujemy je WYŁĄCZNIE do pomocy. Właściciel potwierdził nową, odrębną kategorię Discord **VIP Orders**: `1558892807786209360`.
+- Konfiguracja rozdziału to `TICKET_TOOL_SUPPORT_DISCORD_CATEGORY_ID=1557857668964687913`, `TICKET_TOOL_DISCORD_CATEGORY_IDS=1558892807786209360`, `TICKET_TOOL_CHANNEL_OBSERVATION_ENABLED=true` (dopiero po wdrożeniu, migracji i testach). Kod odrzuca konfigurację wskazującą Support jako kategorię zakupową. **Obecna wersja tylko zapisuje nowe kanały VIP Orders** do `discord_ticket_channels`; nie publikuje jeszcze pakietów, nie uruchamia Stripe i nie nadaje VIP.
 - W Ticket Tool dashboard utworzyć osobną **Ticket Tool Category: VIP Purchase** z Discord target channel category **VIP Orders**, a w **Panels** utworzyć oddzielny `TimonConfigs VIP Shop` panel i opublikować go w `#buy-vip`. Istniejącego Open Ticket/Support nie zmieniać. Nie tworzyć Checkout bez podpisanej interakcji kupującego.
 - **Nie zmieniać jeszcze aktywnych zmiennych Hostingera.** Nowy kod wymaga wcześniejszego uruchomienia migracji `004_discord_ticket_channels.up.sql` po testach i zatwierdzeniu.
 - Bot musi otrzymywać `CHANNEL_CREATE` i widzieć prywatny kanał; Ticket Tool może zastosować nadpisania uprawnień, które ukryją kanał przed TimonConfigs. Najpierw sprawdzić uprawnienia `View Channel` i dla przyszłych wiadomości `Send Messages` oraz `Embed Links` w ticket channel, bez nadawania Administrator.
 - Free Member pozostaje działające na produkcji, nie włączać VIP sync ani realnych płatności przed audytem.
  
 ## Instrukcja Ticket Tool dla właściciela
-1. Discord -> Create Category -> `💎 VIP Orders`, Copy ID kategorii Discord.
+1. Discord: kategoria `💎 VIP Orders` została utworzona, potwierdzony ID `1558892807786209360`.
 2. Ticket Tool dashboard -> Categories -> Create Category `VIP Purchase`, target Discord channel category `💎 VIP Orders`; podpiąć role Staff jako Support Roles.
 3. Panels -> Create Panel `TimonConfigs VIP Shop`; w panelu dodać wyłącznie ticket category `VIP Purchase`.
-4. Publikacja np. `#buy-vip` poleceniem `/setup-panel` lub opcją Send Panel. Stary `Open Ticket` dalej działa osobno.
-5. Przekazać **tylko ID nowej kategorii Discord VIP Orders**; nie przesyłać tokenów ani Stripe API keys.
+4. Publikacja np. `#buy-vip` poleceniem `/setup-panel` lub opcją Send Panel. Stary `Open Ticket` dalej działa osobno. Otworzyć pojedynczy ticket testowy VIP i sprawdzić, że *jego kategoria nadrzędna Discord* to `1558892807786209360`, nie Support. Zweryfikować również, że TimonConfigs VIP Bot widzi prywatny kanał.
+5. Nowy identyfikator został potwierdzony. Nie udostępniać tokenów ani Stripe API keys.
 Dokumentacja: https://ticket-tool.app/docs/quick-start/first-ticket-panel i https://ticket-tool.app/docs/concepts/panels i https://ticket-tool.app/docs/guides/custom-messages.
 
 ## Pozostałe informacje do potwierdzenia
