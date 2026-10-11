@@ -17,6 +17,11 @@ const schema = z
     DISCORD_TEST_GUILD_ID: snowflake.optional(),
     DISCORD_PRODUCTION_GUILD_ID: snowflake.optional(),
     DISCORD_FREE_MEMBER_WRITES_APPROVED: flag("false"),
+    DISCORD_FREE_MEMBER_ROLLOUT_MODE: z.enum(["disabled", "canary", "all"]).default("disabled"),
+    DISCORD_FREE_MEMBER_CANARY_IDS: z.string().default("").transform((value) =>
+      value.trim() ? value.split(",").map((id) => id.trim()) : [],
+    ),
+    DISCORD_FREE_MEMBER_ALL_APPROVAL_REFERENCE: z.string().min(8).max(200).optional(),
     DISCORD_FREE_MEMBER_APPROVAL_REFERENCE: z
       .string()
       .min(8)
@@ -102,6 +107,33 @@ const schema = z
       ctx.addIssue({
         code: "custom",
         message: "Discord IDs must be distinct.",
+      });
+    const canaryIds = config.DISCORD_FREE_MEMBER_CANARY_IDS;
+    if (
+      canaryIds.length > 2 ||
+      canaryIds.some((id) => !snowflake.safeParse(id).success ||
+        id === config.DISCORD_CLIENT_ID || id === config.DISCORD_GUILD_ID) ||
+      new Set(canaryIds).size !== canaryIds.length ||
+      (config.DISCORD_FREE_MEMBER_ROLLOUT_MODE === "canary" && canaryIds.length === 0) ||
+      (config.DISCORD_FREE_MEMBER_ROLLOUT_MODE !== "canary" && canaryIds.length !== 0)
+    )
+      ctx.addIssue({
+        code: "custom",
+        message: "Canary requires one or two distinct human test account IDs; other modes forbid canary IDs.",
+      });
+    if (
+      config.DISCORD_ENVIRONMENT === "production" &&
+      config.DISCORD_WRITES_ENABLED &&
+      (config.DISCORD_FREE_MEMBER_ROLLOUT_MODE === "disabled" ||
+        (config.DISCORD_FREE_MEMBER_ROLLOUT_MODE === "all" &&
+          (!config.DISCORD_FREE_MEMBER_ALL_APPROVAL_REFERENCE ||
+            [config.DISCORD_APPROVAL_REFERENCE, config.DISCORD_FREE_MEMBER_APPROVAL_REFERENCE].includes(
+              config.DISCORD_FREE_MEMBER_ALL_APPROVAL_REFERENCE,
+            ))))
+    )
+      ctx.addIssue({
+        code: "custom",
+        message: "Production writes require a restricted canary or a separate, documented approval for all members.",
       });
     const redirect = new URL(config.DISCORD_OAUTH_REDIRECT_URI);
     if (
@@ -201,6 +233,7 @@ export function loadDiscordConfig(
     "DISCORD_TEST_GUILD_ID",
     "DISCORD_PRODUCTION_GUILD_ID",
     "DISCORD_FREE_MEMBER_APPROVAL_REFERENCE",
+    "DISCORD_FREE_MEMBER_ALL_APPROVAL_REFERENCE",
     "DISCORD_GUILD_OWNER_ID",
     "DISCORD_APPROVAL_REFERENCE",
   ])
