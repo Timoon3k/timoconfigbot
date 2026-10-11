@@ -8,6 +8,7 @@ import {
 import { snowflake, type DiscordConfig } from "./config.js";
 import { DiscordFailure } from "./types.js";
 import type { MemberVerification } from "./verification.js";
+import { isAllowlistedTicketChannel, ticketChannel, type TicketChannel } from "../tickets/ticket-tool-bridge.js";
 
 export const MEMBER_GATEWAY_INTENTS = 1 | 2; // Guilds and privileged Guild Members; no Message Content.
 const frameSchema = z.object({
@@ -52,6 +53,7 @@ export class MemberGatewaySession {
   public constructor(
     private readonly config: DiscordConfig,
     private readonly verification: MemberVerification,
+    private readonly onTicketChannelCreated?: (channel: TicketChannel) => Promise<void>,
   ) {}
   public async dispatch(raw: unknown): Promise<void> {
     const frame = frameSchema.parse(raw);
@@ -82,6 +84,17 @@ export class MemberGatewaySession {
         this.sessionId,
         frame.s!,
       );
+    if (
+      frame.t === "CHANNEL_CREATE" &&
+      this.config.TICKET_TOOL_CHANNEL_OBSERVATION_ENABLED &&
+      isAllowlistedTicketChannel(
+        frame.d,
+        this.config.DISCORD_GUILD_ID,
+        new Set(this.config.TICKET_TOOL_DISCORD_CATEGORY_IDS),
+      )
+    ) {
+      await this.onTicketChannelCreated?.(ticketChannel.parse(frame.d));
+    }
     // Advance only after the event and its outbox have committed. Replay is deduplicated.
     this.sequence = frame.s!;
   }
@@ -114,8 +127,9 @@ export class DiscordMemberGateway {
     ) => Promise<void> = async (ms, signal) => {
       await delay(ms, undefined, { signal });
     },
+    onTicketChannelCreated?: (channel: TicketChannel) => Promise<void>,
   ) {
-    this.session = new MemberGatewaySession(config, verification);
+    this.session = new MemberGatewaySession(config, verification, onTicketChannelCreated);
   }
   public stop(): void {
     this.connected = false;
