@@ -399,6 +399,83 @@ describe("durable Rules Screening verification", () => {
     expect(await restarted.runOne()).toBe(true);
     expect(await verification.runOne()).toBe(false);
   });
+  it("recovers identity/hierarchy dead letters after verified configuration is healthy", async () => {
+    mock.members.set(memberId, { id: memberId, roles: [], pending: false });
+    await event("GUILD_MEMBER_ADD", false);
+    await verification.runOne();
+    await pool.query(
+      `UPDATE discord_member_jobs SET status='dead_letter',attempt_count=8,
+       last_error_code='PROTECTED_HIERARCHY_INVALID' WHERE discord_user_id=$1`,
+      [memberId],
+    );
+    expect(await verification.reconcileBatch()).toBe(1);
+    const queued = (
+      await pool.query(
+        "SELECT status,attempt_count,last_error_code FROM discord_member_jobs WHERE discord_user_id=$1",
+        [memberId],
+      )
+    ).rows[0];
+    expect(queued).toMatchObject({
+      status: "queued",
+      attempt_count: 0,
+      last_error_code: null,
+    });
+    const recovered = await pool.query(
+      "SELECT metadata FROM administrative_audit_logs WHERE action='DISCORD_VERIFICATION_CONFIG_RECOVERED'",
+    );
+    expect(recovered.rows[0].metadata).toMatchObject({
+      recovered: 1,
+      previousErrors: ["PROTECTED_HIERARCHY_INVALID"],
+      dryRun: true,
+    });
+    await verification.runOne();
+    expect(
+      (await pool.query("SELECT status FROM discord_member_jobs WHERE discord_user_id=$1", [memberId])).rows[0].status,
+    ).toBe("succeeded");
+    expect(mock.mutations).toHaveLength(0);
+  });
+  it("leaves unrelated dead letters untouched during automatic recovery", async () => {
+    mock.members.set(memberId, { id: memberId, roles: [], pending: false });
+    await event("GUILD_MEMBER_ADD", false);
+    await verification.runOne();
+    await pool.query(
+      `UPDATE discord_member_jobs SET status='dead_letter',attempt_count=8,
+       last_error_code='DISCORD_PERMISSION_DENIED' WHERE discord_user_id=$1`,
+      [memberId],
+    );
+    await verification.reconcileBatch();
+    const result = (await pool.query(
+      "SELECT status,last_error_code FROM discord_member_jobs WHERE discord_user_id=$1",
+      [memberId],
+    )).rows[0];
+    expect(result).toMatchObject({
+      status: "dead_letter",
+      last_error_code: "DISCORD_PERMISSION_DENIED",
+    });
+  });
+  it("keeps identity dead letters blocked when the live guild identity remains invalid", async () => {
+    mock.members.set(memberId, { id: memberId, roles: [], pending: false });
+    await event("GUILD_MEMBER_ADD", false);
+    await verification.runOne();
+    await pool.query(
+      `UPDATE discord_member_jobs SET status='dead_letter',attempt_count=8,
+       last_error_code='GUILD_IDENTITY_MISMATCH' WHERE discord_user_id=$1`,
+      [memberId],
+    );
+    mock.guild.id = "900000000000000009";
+    expect(await verification.reconcileBatch()).toBe(1);
+    const result = (await pool.query(
+      "SELECT status,last_error_code FROM discord_member_jobs WHERE discord_user_id=$1",
+      [memberId],
+    )).rows[0];
+    expect(result).toMatchObject({
+      status: "dead_letter",
+      last_error_code: "GUILD_IDENTITY_MISMATCH",
+    });
+    expect((await pool.query(
+      "SELECT count(*)::int AS n FROM administrative_audit_logs WHERE action='DISCORD_VERIFICATION_CONFIG_RECOVERED'",
+    )).rows[0].n).toBe(0);
+  });
   it("scans missed events in persistent pages, including unlinked members", async () => {
     for (let i = 1; i <= 3; i++)
       mock.members.set(`20000000000000000${i}`, {
