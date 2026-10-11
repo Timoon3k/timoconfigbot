@@ -3,6 +3,14 @@ import { snowflake } from "./config.js";
 import type { EntitlementTier } from "../domain/products.js";
 import { DiscordFailure, type GuildState } from "./types.js";
 
+export function freeMemberRolloutAllows(config: DiscordConfig, memberId: string): boolean {
+  // Preserve DRY_RUN previews, but restrict every production write to the approved scope.
+  if (config.DISCORD_DRY_RUN || config.DISCORD_ENVIRONMENT !== "production") return true;
+  if (config.DISCORD_FREE_MEMBER_ROLLOUT_MODE === "all") return true;
+  return config.DISCORD_FREE_MEMBER_ROLLOUT_MODE === "canary" &&
+    config.DISCORD_FREE_MEMBER_CANARY_IDS.includes(memberId);
+}
+
 export function managedRoles(config: DiscordConfig): string[] {
   return [
     config.DISCORD_VIP_MONTHLY_ROLE_ID,
