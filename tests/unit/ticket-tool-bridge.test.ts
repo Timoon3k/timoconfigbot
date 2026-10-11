@@ -38,7 +38,7 @@ describe("Ticket Tool event authentication (pure, no network)", () => {
 describe("Ticket Tool candidate channel filtering (no mutations)", () => {
   const guildId = "1557854161805115402";
   // Verified Support category selected by the guild owner for Ticket Tool.
-  const categoryId = "1557857668964687913";
+  const categoryId = "200000000000000001";
   const channelId = "200000000000000002";
   const channel = { id: channelId, guild_id: guildId, parent_id: categoryId, type: 0 };
   it("requires an exact guild and ticket category allowlist", () => {
