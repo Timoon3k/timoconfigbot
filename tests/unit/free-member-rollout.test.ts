@@ -166,6 +166,20 @@ describe("Free Member production mutation boundary (offline transport)", () => {
     ).rejects.toMatchObject({ code: "FREE_MEMBER_ROLLOUT_RESTRICTED" });
     expect(writes(f.request)).toEqual([]);
   });
+  it("blocks unapproved non-canary role operations before writing audit records", async () => {
+    const other = "200000000000000002";
+    const f = fixture({ id: other, roles: [], pending: false });
+    const query = vi.fn();
+    const pool = { query } as unknown as DatabasePool;
+    const db = { query } as unknown as DatabaseClient;
+    await expect(
+      new RoleOperations(pool, f.config, f.adapter).apply(
+        db, other, f.config.DISCORD_FREE_MEMBER_ROLE_ID, "add", null,
+      ),
+    ).rejects.toMatchObject({ code: "FREE_MEMBER_ROLLOUT_RESTRICTED" });
+    expect(query).not.toHaveBeenCalled();
+    expect(f.request).not.toHaveBeenCalled();
+  });
   it("requires an explicitly approved scope for production writes", () => {
     expect(() => loadDiscordConfig({
       ...approved, DISCORD_FREE_MEMBER_ROLLOUT_MODE: "disabled",
