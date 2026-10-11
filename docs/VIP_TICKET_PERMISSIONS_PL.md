@@ -18,6 +18,30 @@ Nowe flagi ticketów są osobne i domyślnie wyłączone. Kod nie tworzy płatno
 checkoutów, subskrypcji ani ról VIP. Ticket Tool nadal tworzy/zamyka tickety;
 stary panel Support pozostaje bez zmian.
 
+## Potwierdzone ID — stan panelu Ticket Tool (11 października 2026)
+
+- Guild: `1557854161805115402`.
+- Bot Ticket Tool **użytkownik**: `557628352828014614` — poprawna wartość dla `TICKET_TOOL_BOT_ID`.
+- Discord category VIP Orders: `1558892807786209360`.
+- Discord category Support: `1557857668964687913` (nie uruchamiać zakupów).
+- Publiczny kanał `#open-vip-ticket`: `1558927395233468416` — wartość argumentu `--panel-channel`.
+- **ID prywatnego ticket channel:** JESZCZE NIEZNANE. Na przesłanym ekranie kanał publiczny jest pusty: Ticket Tool panel nie został jeszcze opublikowany, zatem `--ticket-channel` nie da się poprawnie uzupełnić.
+
+### Co właściciel musi najpierw zrobić (poza Codex Cloud)
+
+1. Dashboard Ticket Tool → edytuj istniejący osobny panel `TimonConfigs | VIP Shop`. Zadbaj o element typu **BUTTON** z kategorią `VIP Purchase` (nie samo przypisanie Discord category; wybór category w panel item jest oddzielnym krokiem).
+2. W Discordzie użyj **komendy Ticket Tool** `/setup-panel`; wybierz `TimonConfigs | VIP Shop`, kanał `#open-vip-ticket`. Dashboard zapisuje konfigurację, ale nie publikuje panelu sam. Dokumentacja: https://ticket-tool.app/docs/concepts/panels .
+3. Sprawdź, że w publicznym kanale pojawił się embed Ticket Tool z przyciskiem `Open VIP Ticket`. Jeżeli jest pusty, nie próbuj uruchamiać audytu na ślepo.
+4. Kliknij przycisk; powinien powstać **prywatny kanał** pod Discord category VIP Orders. Skopiuj jego ID. Jeśli ticket ląduje w Support — napraw przypisanie `VIP Purchase -> VIP Orders` w Ticket Tool; nie zmieniaj systemu Support.
+5. Dopiero po sprawdzeniu prywatności można uruchomić read-only CLI z obydwoma istniejącymi ID kanałów. Nie publikuj wyników zawierających potencjalne prywatne nazwy i role klientów.
+
+Przykładowe zmienne przekazywane **tylko do CLI**, bez modyfikowania produkcji:
+```sh
+export TICKET_TOOL_BOT_ID=557628352828014614
+export VIP_PUBLIC_PANEL_ID=1558927395233468416
+# VIP_TEST_TICKET_ID: wkleić ID faktycznie utworzonego prywatnego ticketa, nie ID VIP Orders ani panelu.
+```
+
 ## Wdrożenie na istniejącym Hostingerze
 
 1. Przejrzeć PR/diff. Zapisać SHA działającej wersji i istniejące niesekretne
