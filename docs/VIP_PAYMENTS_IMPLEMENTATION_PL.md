@@ -43,3 +43,45 @@ Aktywnych flag Free Member nie zmieniać.
 ## Decyzja potrzebna przed wyborem adaptera
 
 Jaki operator płatności będzie obsługiwał rzeczywiste transakcje (€40 miesięcznie auto-renew + €100 lifetime) i czy istnieje pisemne potwierdzenie jego zgody na katalog Cronus/XIM? HotPay może mieć funkcje płatności jednorazowych; nie zakładać, że konkretny typ konta/produktu wspiera automatyczny recurring. Stripe ma rozbudowane API subskrypcji, lecz również weryfikuje kategorie i zastrzega możliwość odrzucenia. Decyzję i dokumentację API potwierdzić przed implementacją.
+
+## Wybrana bramka: Stripe Checkout + Stripe Billing + PayPal w Stripe
+
+**Decyzja właściciela z 11.10.2026:** preferowane Stripe Billing wraz z metodą płatności PayPal, bez osobnego adaptera PayPal. Konto Stripe prawdopodobnie z Polski, ale faktyczny kraj i status firmy należy zweryfikować podczas onboardingu. PayPal through Stripe jest dostępny dla kont Stripe w Polsce; miesięczny recurring PayPal może wymagać akceptacji/aktywacji po stronie Stripe i PayPal.
+
+Źródła:
+- https://docs.stripe.com/payments/paypal — PL na liście, Subscriptions wspierane, recurring czasami wymaga approval.
+- https://docs.stripe.com/payments/paypal/activate — połączenie PayPal w Stripe Dashboard, settlement mode, status pending.
+- https://docs.stripe.com/payments/paypal/set-up-future-payments — reusable authorization / recurring.
+- https://stripe.com/legal/restricted-businesses — eligibility dla konkretnych produktów musi zostać rozpatrzona przez Stripe; PayPal ma własną AUP.
+- https://docs.stripe.com/billing/subscriptions/overview — model recurring.
+
+### UX i plan Stripe
+
+1. **VIP Monthly Auto-Renew: €40 / miesiąc** — `Stripe Checkout Session(mode='subscription')` i Stripe Price recurring EUR 4000 minor, interval month=1. Do not invent direct PayPal billing permissions: show PayPal in Checkout only if Stripe account/method status permits subscription mode. Alternative card payment can be used only if the catalog is approved.
+2. **VIP Lifetime: €100 jednorazowo** — `Checkout Session(mode='payment')`, one-time EUR 10000 minor. Terms must explicitly define the serviced lifetime, included updates, refund/cancellation, scope.
+3. **VIP Monthly Once: €40 jednorazowo** — optional `mode='payment'` with one calendar month entitlement; not automatically renewed.
+4. User signs into TimonConfigs portal, links Discord OAuth to own app user ID (do not store Discord passwords), selects product. Backend creates Checkout Session for allowlisted Stripe Price ID. WordPress redirects to hosted Checkout. **No unauthenticated public endpoint to mint purchase sessions for arbitrary accounts.**
+5. After payment, Stripe sends signed webhook to Node backend `/api/payments/stripe/webhook` using raw request body. WordPress success redirect is informational only and MUST NOT unlock VIP.
+6. Durable verified Stripe event -> entitlement -> Discord synchronization queue. For recurring monthly access **paid subscription invoice** is authoritative, not mere subscription creation; never double-count the first invoice because checkout and invoice may both produce events.
+7. Customer Portal hosted in Stripe for cancellation/confirmation, returning to timonconfigs.com.
+8. User VIP role after successful paid entitlement, accurate expiry date, refund/dispute reversal, cancellation effective at paid-through. Free Member role stays untouched.
+
+### Data boundaries, migration and approvals
+
+- Existing DB `payment_events`, `orders`, `payments`, `billing_subscriptions` use provider='mock' and the service rejects mock in production. Extend with **versioned additive migration** for Stripe, with unique indexes on Stripe event IDs, checkout session/order IDs, invoice IDs, payment intent IDs, subscription/customer IDs; safe idempotent reconciliation.
+- Create dedicated Stripe verification/normalization adapter; use official Stripe server SDK and signature verification `stripe.webhooks.constructEvent(rawBody, signature, endpointSecret)`; enforce real merchant account/environment and server-side price/product/customer/amount/currency checks, reject spoofed metadata or mismatched checkout sessions.
+- Events: `checkout.session.completed` (mapping, not automatic entitlement for monthly), `checkout.session.async_payment_succeeded` if supported async flow, `invoice.paid` (verify actual paid transaction; exclude out-of-band/zero without explicit approved policy), `invoice.payment_failed`, `customer.subscription.updated`, `customer.subscription.deleted`, `charge.refunded`, and dispute events. Use Stripe canonical docs of API version in code review; snapshot API event payload changes across versions.
+- Fail closed for Stripe webhook signature errors and stale or invalid event schema; make callback idempotent and race-safe. A refund or dispute reverses only corresponding entitlements; keep separate invoice/payment mapping, prevent duplicate renewals.
+- Existing production `DISCORD_VIP_SYNC_ENABLED=true` is forbidden: requires **separate owner approval and code review** to allow VIP Monthly/Lifetime grants/removals while still protecting Founder, Staff and Free Member, with role ownership ledger and current Rules Screening. Use feature-flag and staged rollout (sandbox before production).
+- **Do not enable real payment checkout without confirming Stripe and PayPal acceptance of the precise TimonConfigs Cronus Zen/XIM Matrix scripts/configurations and any recurring access.** Never use misleading product descriptions to circumvent review. Do not assume Stripe accepts unregistered economic activity (działalność nierejestrowana) in Poland; verify account type/KYC and legal/tax responsibilities with Stripe or adviser.
+- Stripe test mode does not imply PayPal method can be tested until PayPal integration is enabled; use configured Stripe test methods and account-specific availability. Merchant must connect PayPal in https://dashboard.stripe.com/settings/payment_methods and check recurring approval there. Do not request API keys in public chat; secrets stored only in Hostinger protected env.
+
+### Production readiness gates
+
+- [ ] Stripe account onboarding/KYC and written acceptance of real product catalog (including PayPal acceptance when relevant)
+- [ ] Verified Stripe PayPal recurring status (subscription payments, not just one-time)
+- [ ] Dedicated `sk_test`, webhook test signing secret, Stripe Price IDs from verified Dashboard (stored in env), verified HTTPS callback
+- [ ] End-to-end sandbox tests including same invoice twice, reordering, retries, webhook failure, renewal, cancellation, dispute, refund, upgrade to lifetime and role reconciliation
+- [ ] Reviewed terms, auto-renew disclosure, Lifetime terms, GDPR and tax/invoicing
+- [ ] Separate production Stripe and Discord VIP-write approvals, backups, monitored rollout and tested rollback
+
