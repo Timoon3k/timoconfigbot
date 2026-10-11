@@ -478,6 +478,30 @@ describe("durable Rules Screening verification", () => {
         .rows[0].n,
     ).toBe(1);
   });
+  it("does not grant a verified non-canary member a role in production", async () => {
+    const f = liveFixture(true);
+    const other = "200000000000000002";
+    f.state.members.set(other, { id: other, roles: [], pending: false });
+    await f.verification.dispatch(
+      "GUILD_MEMBER_ADD",
+      { guild_id: f.live.DISCORD_GUILD_ID, user: { id: other }, pending: false },
+      "session",
+      1,
+    );
+    await f.verification.runOne();
+    expect(f.state.mutations).toEqual([]);
+    expect(
+      (await pool.query("SELECT count(*)::int AS n FROM discord_role_operations"))
+        .rows[0].n,
+    ).toBe(0);
+    const audit = await pool.query(
+      "SELECT metadata FROM administrative_audit_logs WHERE action='DISCORD_VERIFICATION_PLANNED'",
+    );
+    expect(audit.rows[0].metadata.outcome).toBe("rollout_excluded");
+    expect(
+      (await pool.query("SELECT status FROM discord_member_jobs")).rows[0].status,
+    ).toBe("succeeded");
+  });
   it("performs one verified Free Member assignment across concurrent workers, then noops", async () => {
     const f = liveFixture();
     await f.verification.dispatch(
