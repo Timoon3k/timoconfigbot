@@ -208,6 +208,12 @@ export class RestDiscordAdapter implements DiscordAdapter {
     verifyGuild(this.config, await this.inspectGuild());
     const current = await this.getMember(memberId);
     if (!current) throw new DiscordFailure("MEMBER_ABSENT");
+    if (
+      method === "PUT" &&
+      roleId === this.config.DISCORD_FREE_MEMBER_ROLE_ID &&
+      (current.bot === true || memberId === this.config.DISCORD_CLIENT_ID)
+    )
+      throw new DiscordFailure("MEMBER_BOT_NOT_ALLOWED");
     // Giving any role can bypass Rules Screening; require explicit REST verification for additions.
     if (method === "PUT" && current.roles.includes(roleId))
       throw new DiscordFailure("ROLE_ASSIGNMENT_RACE");

@@ -127,7 +127,7 @@ async function buy(
 async function drain(service: DiscordSyncService) {
   for (let i = 0; i < 50; i++) if (!(await service.runOne())) break;
 }
-function liveFixture() {
+function liveFixture(production = false) {
   const live = loadDiscordConfig({
     DISCORD_ENVIRONMENT: "test-guild",
     DISCORD_TEST_GUILD_ID: "900000000000000001",
@@ -140,6 +140,21 @@ function liveFixture() {
     DISCORD_DRY_RUN: "false",
     DISCORD_WRITES_ENABLED: "true",
     DISCORD_VERIFICATION_ENABLED: "true",
+    ...(production
+      ? {
+          NODE_ENV: "production",
+          DISCORD_ENVIRONMENT: "production",
+          DISCORD_TEST_GUILD_ID: "",
+          DISCORD_PRODUCTION_GUILD_ID: "900000000000000001",
+          DISCORD_VIP_SYNC_ENABLED: "false",
+          DISCORD_FREE_MEMBER_WRITES_APPROVED: "true",
+          DISCORD_FREE_MEMBER_APPROVAL_REFERENCE:
+            "fixture-free-member-approval",
+          DISCORD_OAUTH_REDIRECT_URI:
+            "https://bot.timonconfigs.com/api/discord/callback",
+          DISCORD_INTERACTIONS_PUBLIC_KEY: "a".repeat(64),
+        }
+      : {}),
   });
   const state = new MockDiscordAdapter(live);
   state.members.set(memberId, { id: memberId, roles: [], pending: false });
@@ -175,7 +190,7 @@ function liveFixture() {
         id === live.DISCORD_CLIENT_ID ? guild.bot : state.members.get(id);
       return member
         ? Response.json({
-            user: { id },
+            user: { id, bot: member.bot },
             roles: member.roles,
             ...("pending" in member ? { pending: member.pending } : {}),
           })
@@ -213,6 +228,122 @@ function liveFixture() {
   };
 }
 describe("durable Rules Screening verification", () => {
+  it.each(["pending", "unknown", "bot", "own-bot"] as const)(
+    "does not journal or execute Free Member writes for %s",
+    async (kind) => {
+      const f = liveFixture(true);
+      const id = kind === "own-bot" ? f.live.DISCORD_CLIENT_ID : memberId;
+      f.state.members.set(id, {
+        id,
+        roles: [],
+        ...(kind === "unknown" ? {} : { pending: kind === "pending" }),
+        ...(kind === "bot" ? { bot: true } : {}),
+      });
+      await f.verification.dispatch(
+        "GUILD_MEMBER_ADD",
+        {
+          guild_id: f.live.DISCORD_GUILD_ID,
+          user: { id },
+          pending: false,
+        },
+        "session",
+        1,
+      );
+      await f.verification.runOne();
+      expect(f.state.mutations).toEqual([]);
+      expect(
+        (
+          await pool.query(
+            "SELECT count(*)::int AS n FROM discord_role_operations",
+          )
+        ).rows[0].n,
+      ).toBe(0);
+      const audit = await pool.query(
+        "SELECT metadata FROM administrative_audit_logs WHERE action='DISCORD_VERIFICATION_PLANNED'",
+      );
+      expect(audit.rows[0].metadata.outcome).toBe(
+        kind === "bot" || kind === "own-bot"
+          ? "bot_excluded"
+          : "screening_pending_or_unknown",
+      );
+    },
+  );
+  it("deduplicates production Free Member events and recovers lost confirmation without another write", async () => {
+    const f = liveFixture(true);
+    const member = f.state.members.get(memberId)!;
+    const protectedRoles = [
+      f.live.DISCORD_FOUNDER_ROLE_ID,
+      f.live.DISCORD_STAFF_ROLE_ID,
+      f.live.DISCORD_VIP_MONTHLY_ROLE_ID,
+      f.live.DISCORD_VIP_LIFETIME_ROLE_ID,
+    ];
+    member.roles = [...protectedRoles];
+    const dispatch = (sequence: number) =>
+      f.verification.dispatch(
+        "GUILD_MEMBER_UPDATE",
+        {
+          guild_id: f.live.DISCORD_GUILD_ID,
+          user: { id: memberId },
+          pending: false,
+          roles: member.roles,
+        },
+        "session",
+        sequence,
+      );
+    await Promise.all([dispatch(1), dispatch(1)]);
+    expect(
+      (
+        await pool.query(
+          "SELECT requested_version::int AS version FROM discord_member_jobs",
+        )
+      ).rows[0].version,
+    ).toBe(1);
+    f.loseConfirmation();
+    await Promise.all([f.verification.runOne(), f.verification.runOne()]);
+    expect(f.state.mutations).toEqual([
+      {
+        memberId,
+        roleId: f.live.DISCORD_FREE_MEMBER_ROLE_ID,
+        operation: "add",
+      },
+    ]);
+    expect(
+      (await pool.query("SELECT status FROM discord_member_jobs")).rows[0]
+        .status,
+    ).toBe("retry");
+    expect(
+      (await pool.query("SELECT status FROM discord_role_operations")).rows[0]
+        .status,
+    ).toBe("uncertain");
+    f.restore();
+    await pool.query("UPDATE discord_member_jobs SET available_at=now()");
+    const restarted = new MemberVerification(
+      pool,
+      f.live,
+      f.adapter,
+      f.service,
+    );
+    await restarted.runOne();
+    await dispatch(1); // Replay of the original Gateway sequence.
+    await dispatch(2); // A distinct event observing the role already assigned.
+    await restarted.runOne();
+    expect(f.state.mutations).toHaveLength(1);
+    expect(member.roles).toEqual([
+      ...protectedRoles,
+      f.live.DISCORD_FREE_MEMBER_ROLE_ID,
+    ]);
+    expect(
+      (await pool.query("SELECT status FROM discord_member_jobs")).rows[0]
+        .status,
+    ).toBe("succeeded");
+    expect(
+      (
+        await pool.query(
+          "SELECT count(*)::int AS n FROM discord_role_operations",
+        )
+      ).rows[0].n,
+    ).toBe(1);
+  });
   it.each([true, undefined])(
     "does not assign Free Member for pending=%s",
     async (pending) => {
