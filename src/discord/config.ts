@@ -3,7 +3,7 @@ import { z } from "zod";
 export const snowflake = z
   .string()
   .regex(/^[0-9]{17,20}$/)
-  .refine((id) => BigInt(id) > 0n && BigInt(id) <= 18446744073709551615n);
+  .refine((id) => /^\d{17,20}$/.test(id) && BigInt(id) > 0n && BigInt(id) <= 18446744073709551615n);
 const flag = (value: "true" | "false") =>
   z
     .enum(["true", "false"])
