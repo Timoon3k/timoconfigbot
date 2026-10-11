@@ -24,6 +24,8 @@ const approved = {
   DISCORD_DRY_RUN: "false",
   DISCORD_VERIFICATION_ENABLED: "true",
   DISCORD_FREE_MEMBER_WRITES_APPROVED: "true",
+  DISCORD_FREE_MEMBER_ROLLOUT_MODE: "canary",
+  DISCORD_FREE_MEMBER_CANARY_IDS: "200000000000000001",
   DISCORD_FREE_MEMBER_APPROVAL_REFERENCE: "fixture-free-member-approval",
 };
 const memberId = "200000000000000001";
@@ -156,6 +158,37 @@ describe("Free Member production mutation boundary (offline transport)", () => {
       expect(f.request).not.toHaveBeenCalled();
     },
   );
+  it("rejects a verified user outside the production canary", async () => {
+    const other = "200000000000000002";
+    const f = fixture({ id: other, roles: [], pending: false });
+    await expect(
+      f.adapter.addRole(other, f.config.DISCORD_FREE_MEMBER_ROLE_ID),
+    ).rejects.toMatchObject({ code: "FREE_MEMBER_ROLLOUT_RESTRICTED" });
+    expect(writes(f.request)).toEqual([]);
+  });
+  it("requires an explicitly approved scope for production writes", () => {
+    expect(() => loadDiscordConfig({
+      ...approved, DISCORD_FREE_MEMBER_ROLLOUT_MODE: "disabled",
+      DISCORD_FREE_MEMBER_CANARY_IDS: "",
+    })).toThrow();
+    expect(() => loadDiscordConfig({
+      ...approved, DISCORD_FREE_MEMBER_ROLLOUT_MODE: "all",
+      DISCORD_FREE_MEMBER_CANARY_IDS: "",
+    })).toThrow();
+    expect(() => loadDiscordConfig({
+      ...approved, DISCORD_FREE_MEMBER_ROLLOUT_MODE: "all",
+      DISCORD_FREE_MEMBER_CANARY_IDS: "",
+      DISCORD_FREE_MEMBER_ALL_APPROVAL_REFERENCE: "fixture-all-server-approval",
+    })).not.toThrow();
+    expect(() => loadDiscordConfig({
+      ...approved,
+      DISCORD_FREE_MEMBER_CANARY_IDS: "200000000000000001,200000000000000001",
+    })).toThrow();
+    expect(() => loadDiscordConfig({
+      ...approved,
+      DISCORD_FREE_MEMBER_CANARY_IDS: "200000000000000001,200000000000000002,200000000000000003",
+    })).toThrow();
+  });
   it("keeps the read-only production configuration unable to write", async () => {
     const f = fixture(
       { id: memberId, roles: [], pending: false },
