@@ -19,6 +19,11 @@ import { TicketRest } from "../tickets/rest.js";
 import { TicketService } from "../tickets/service.js";
 import { MockOAuthProvider, RestOAuthProvider } from "./oauth-provider.js";
 import { DiscordSyncService } from "./sync.js";
+import { loadBillingConfig } from "../billing/config.js";
+import { OfficialStripe } from "../billing/stripe.js";
+import { BillingService } from "../billing/service.js";
+import { BillingInteractions, EphemeralDiscordReply } from "../billing/interactions.js";
+import { BillingVipSync, BillingWorker, PaidRoleRest } from "../billing/roles.js";
 
 export function createDiscordRuntime(
   pool: DatabasePool,
@@ -59,6 +64,13 @@ export function createDiscordRuntime(
   );
   const verification = new MemberVerification(pool, config, adapter, sync);
   const tickets = new TicketService(pool, config, new TicketRest(config, env.DISCORD_BOT_TOKEN ?? "", transport));
+  const billingConfig = loadBillingConfig(env);
+  const billing = new BillingService(pool, billingConfig, new OfficialStripe(billingConfig), secret);
+  const rateGate = new PostgresDiscordRateGate(pool, `rate:${config.DISCORD_GUILD_ID}`, config.DISCORD_MIN_REQUEST_MS);
+  const billingInteractions = new BillingInteractions(billing, config, tickets, new EphemeralDiscordReply(config, rateGate));
+  const paidRoles = reader instanceof RestDiscordAdapter
+    ? new PaidRoleRest(reader, config, billingConfig, env.DISCORD_BOT_TOKEN ?? "", rateGate) : undefined;
+  const billingWorker = new BillingWorker(billing, billingInteractions, new BillingVipSync(billing, config, paidRoles));
   const onTicketChannelCreated = config.TICKET_TOOL_CHANNEL_OBSERVATION_ENABLED
     ? tickets.observe.bind(tickets)
     : undefined;
@@ -73,5 +85,5 @@ export function createDiscordRuntime(
         onTicketChannelCreated,
       )
     : null;
-  return { sync, links, verification, gateway, tickets };
+  return { sync, links, verification, gateway, tickets, billing, billingInteractions, billingWorker };
 }

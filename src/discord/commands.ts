@@ -5,6 +5,7 @@ import type { MembershipService } from "../membership/service.js";
 import { snowflake, type DiscordConfig } from "./config.js";
 import { DiscordFailure } from "./types.js";
 import type { TicketService } from "../tickets/service.js";
+import type { BillingInteractions } from "../billing/interactions.js";
 
 export const slashCommands = [
   {
@@ -34,7 +35,19 @@ export class DiscordCommands {
     private readonly memberships: MembershipService,
     private readonly config: DiscordConfig,
     private readonly tickets?: TicketService,
+    private readonly billing?: BillingInteractions,
   ) {}
+  public async handleBilling(input: Parameters<BillingInteractions["enqueue"]>[0]) {
+    if (!this.billing?.enabled()) throw new DiscordFailure("BILLING_NOT_ENABLED");
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    try {
+      await Promise.race([this.billing.enqueue(input), new Promise<never>((_resolve, reject) => {
+        timer = setTimeout(() => reject(new DiscordFailure("BILLING_QUEUE_UNAVAILABLE")), 1800);
+      })]);
+      return { type: 5, data: { flags: 64 } };
+    } finally { clearTimeout(timer); }
+  }
+  public billingEnabled(): boolean { return this.billing?.enabled() ?? false; }
   public async handleTicket(input: Parameters<TicketService["select"]>[0]) {
     if (!this.tickets) throw new DiscordFailure("TICKET_SELECTIONS_NOT_ENABLED");
     // Initial ephemeral reply stays below Discord's three-second deadline even if REST stalls.
@@ -53,9 +66,22 @@ export class DiscordCommands {
     if (guildId !== this.config.DISCORD_GUILD_ID)
       throw new DiscordFailure("GUILD_IDENTITY_MISMATCH");
     snowflake.parse(discordId);
+    if (this.billing?.billing.config.STRIPE_WEBHOOKS_ENABLED && ["membership", "sync-status"].includes(command)) {
+      const service = this.billing.billing;
+      const principal = (await this.pool.query<{ id: string }>(`SELECT id FROM discord_billing_principals
+        WHERE guild_id=$1 AND discord_user_id=$2 AND stripe_account_id=$3 AND mode=$4`,
+        [guildId, discordId, service.config.STRIPE_ACCOUNT_ID!, service.config.STRIPE_MODE])).rows[0];
+      if (principal) {
+        const tier = await service.tier(this.pool, principal.id);
+        const status = (await this.pool.query<{ outcome: string }>("SELECT outcome FROM stripe_vip_sync_state WHERE principal_id=$1", [principal.id])).rows[0];
+        return { type: 4, data: { flags: 64, allowed_mentions: { parse: [] },
+          content: `Verified Discord membership: ${tier}. VIP role synchronization: ${status?.outcome ?? "pending"}. ${service.config.STRIPE_MODE === "test" ? "Stripe TEST mode. " : ""}Use Manage Billing / Status in your private VIP ticket to manage renewals. Lifetime license terms apply.` } };
+      }
+    }
     let content: string;
     if (command === "help")
-      content = `Connect your account through the authenticated TimonConfigs Discord account settings. For help, visit ${this.config.DISCORD_SUPPORT_URL} and open an existing support ticket. Commands cannot grant roles.`;
+      content = this.billing?.enabled() ? "Open a VIP ticket using the existing Ticket Tool panel. Select Monthly or Lifetime, review the terms, and confirm to open private Stripe Checkout. No website account is required. Manage Billing / Status opens cancellation and payment status. Commands cannot grant roles." :
+        `Connect your account through the authenticated TimonConfigs Discord account settings. For help, visit ${this.config.DISCORD_SUPPORT_URL} and open an existing support ticket. Commands cannot grant roles.`;
     else {
       const account = (
         await this.pool.query<{ user_id: string }>(
@@ -139,6 +165,7 @@ export async function verifiedInteraction(
       type: z.number().int(),
       application_id: snowflake,
       id: snowflake.optional(),
+      token: z.string().max(2048).optional(),
       guild_id: snowflake.optional(),
       channel_id: snowflake.optional(),
       message: z.object({ id: snowflake, author: z.object({ id: snowflake }) }).optional(),
@@ -154,9 +181,14 @@ export async function verifiedInteraction(
         !interaction.member || !interaction.message || !interaction.data?.custom_id ||
         interaction.message.author.id !== applicationId)
       throw new DiscordFailure("TICKET_INTERACTION_INVALID");
-    return commands.handleTicket({ interactionId: interaction.id, guildId: interaction.guild_id,
+    const input = { interactionId: interaction.id, guildId: interaction.guild_id,
       channelId: interaction.channel_id, memberId: interaction.member.user.id,
-      messageId: interaction.message.id, customId: interaction.data.custom_id });
+      messageId: interaction.message.id, customId: interaction.data.custom_id };
+    if (commands.billingEnabled()) {
+      if (!interaction.token) throw new DiscordFailure("BILLING_INTERACTION_TOKEN_MISSING");
+      return commands.handleBilling({ ...input, token: interaction.token });
+    }
+    return commands.handleTicket(input);
   }
   if (
     interaction.type !== 2 ||

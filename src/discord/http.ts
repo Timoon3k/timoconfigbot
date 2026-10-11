@@ -10,6 +10,7 @@ import { DiscordFailure } from "./types.js";
 import { DiscordCommands } from "./commands.js";
 import { registerInteractionEndpoint } from "./interactions-http.js";
 import type { TicketService } from "../tickets/service.js";
+import type { BillingInteractions } from "../billing/interactions.js";
 import { MembershipService } from "../membership/service.js";
 
 export function sessionToken(request: FastifyRequest): string {
@@ -35,6 +36,7 @@ export function registerDiscordRoutes(
   links: DiscordLinkService,
   readiness?: () => Promise<{ ready: boolean; state: string; gateway: string }>,
   tickets?: TicketService,
+  billing?: BillingInteractions,
 ): void {
   if (sync.config.DISCORD_INTERACTIONS_PUBLIC_KEY)
     registerInteractionEndpoint(
@@ -47,6 +49,7 @@ export function registerDiscordRoutes(
         ),
         sync.config,
         tickets,
+        billing,
       ),
       sync.config.DISCORD_INTERACTIONS_PUBLIC_KEY,
       sync.config.DISCORD_CLIENT_ID,

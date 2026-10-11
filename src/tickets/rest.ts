@@ -23,7 +23,7 @@ export function welcomePanel() {
       {
         title: "TimonConfigs VIP Membership",
         description:
-          "VIP Monthly — EUR 40/month, auto-renewal.\nVIP Lifetime — EUR 100, one-time payment.\n\nSelect a membership below. Payments are not enabled; selection does not grant VIP access.",
+          "VIP Monthly — EUR 40/month, auto-renewal.\nVIP Lifetime — EUR 100, one-time payment.\n\nSelect a membership below. Checkout availability and terms are shown privately. Selection does not grant VIP access.",
       },
     ],
     components: [

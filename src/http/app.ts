@@ -10,6 +10,9 @@ import type { DiscordSyncService } from "../discord/sync.js";
 import type { DiscordLinkService } from "../discord/oauth.js";
 import { registerDiscordRoutes } from "../discord/http.js";
 import type { TicketService } from "../tickets/service.js";
+import type { BillingService } from "../billing/service.js";
+import type { BillingInteractions } from "../billing/interactions.js";
+import { registerBillingRoutes } from "../billing/http.js";
 
 const credentialsSchema = z.object({
   email: z.string().email().max(320),
@@ -27,7 +30,8 @@ export function buildApp(dependencies: {
   memberships: MembershipService;
   production: boolean;
   readiness?: () => Promise<{ ready: boolean; state: string; gateway: string }>;
-  discord?: { sync: DiscordSyncService; links: DiscordLinkService; tickets?: TicketService };
+  discord?: { sync: DiscordSyncService; links: DiscordLinkService; tickets?: TicketService;
+    billing?: BillingService; billingInteractions?: BillingInteractions };
 }): FastifyInstance {
   const app = Fastify({
     logger: false,
@@ -99,6 +103,8 @@ export function buildApp(dependencies: {
   app.get("/health", async () => ({
     status: "ok",
     payments: dependencies.production ? "disabled" : "sandbox-only",
+    stripeBilling: dependencies.discord?.billing?.config.STRIPE_CHECKOUT_ENABLED
+      ? dependencies.discord.billing.config.STRIPE_MODE : "checkout-disabled",
     discord:
       dependencies.discord?.sync.config.DISCORD_DRY_RUN === false
         ? dependencies.discord.sync.config.DISCORD_ENVIRONMENT === "production"
@@ -183,6 +189,8 @@ export function buildApp(dependencies: {
       dependencies.discord.links,
       dependencies.readiness,
       dependencies.discord.tickets,
+      dependencies.discord.billingInteractions,
     );
+  if (dependencies.discord?.billing) registerBillingRoutes(app, dependencies.discord.billing);
   return app;
 }

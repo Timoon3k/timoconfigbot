@@ -31,7 +31,7 @@ if (
   throw new Error("Cron bounds are invalid.");
 }
 const client = await pool.connect();
-const worker = new DiscordWorker(runtime.sync, runtime.verification, runtime.tickets);
+const worker = new DiscordWorker(runtime.sync, runtime.verification, runtime.tickets, runtime.billingWorker);
 const key = `discord-gateway:${runtime.sync.config.DISCORD_GUILD_ID}`;
 const disconnect = () => worker.stop();
 client.on("error", disconnect);
@@ -52,6 +52,7 @@ try {
     for (let i = 0; i < ticks && Date.now() - started < duration; i++) {
       await client.query("SELECT 1");
       await worker.tick();
+      await worker.drainBilling();
     }
   if (leader)
     await pool.query(

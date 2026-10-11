@@ -190,6 +190,7 @@ describe("Durable VIP ticket welcome", () => {
     expect(f.messages).toEqual([]);
   });
   it("accepts a signed-handler identity with durable click deduplication and no payments or roles", async () => {
+    const existingOrders = (await pool.query("SELECT count(*)::int AS n FROM orders")).rows[0].n;
     const f = setup();
     await f.service.observe(f.event);
     await f.service.runOne();
@@ -208,7 +209,7 @@ describe("Durable VIP ticket welcome", () => {
     ]);
     expect(
       (await pool.query("SELECT count(*)::int AS n FROM orders")).rows[0].n,
-    ).toBe(0);
+    ).toBe(existingOrders);
     expect(
       f.calls.some((c) => ["PUT", "DELETE", "PATCH"].includes(c.method)),
     ).toBe(false);

@@ -876,12 +876,11 @@ describe("OAuth linking lifecycle and authorization", () => {
   });
 });
 
-describe("Phase 2 migration reversibility", () => {
-  it("rolls back 002 and reapplies it without losing Phase 1 users or entitlements", async () => {
+describe("Additive migration safety", () => {
+  it("refuses financial schema rollback without losing Phase 1 users or entitlements", async () => {
     const owner = await user();
     await purchase(owner.id, "VIP_LIFETIME");
-    await migrateDown(pool); // 003: no live operation evidence in this offline fixture.
-    await migrateDown(pool); // 002
+    await expect(migrateDown(pool)).rejects.toThrow("retain payment and role evidence");
     expect(await memberships.activeTier(owner.id, now)).toBe("VIP_LIFETIME");
     await migrateUp(pool);
     expect(
