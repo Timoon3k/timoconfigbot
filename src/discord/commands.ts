@@ -37,9 +37,26 @@ export class DiscordCommands {
     if (guildId !== this.config.DISCORD_GUILD_ID)
       throw new DiscordFailure("GUILD_IDENTITY_MISMATCH");
     snowflake.parse(discordId);
+    if (
+      this.config.DISCORD_ENVIRONMENT === "production" &&
+      !this.config.DISCORD_READONLY_COMMANDS_ENABLED
+    )
+      return {
+        type: 4,
+        data: {
+          content: "Commands are not enabled yet. Please contact TimonConfigs support.",
+          flags: 64,
+          allowed_mentions: { parse: [] },
+        },
+      };
+    if (!slashCommands.some((entry) => entry.name === command))
+      return {
+        type: 4,
+        data: { content: "Unknown command. Use /help.", flags: 64, allowed_mentions: { parse: [] } },
+      };
     let content: string;
     if (command === "help")
-      content = `Connect your account through the authenticated TimonConfigs Discord account settings. For help, visit ${this.config.DISCORD_SUPPORT_URL} and open an existing support ticket. Commands cannot grant roles.`;
+      content = `TimonConfigs commands: /membership shows linked VIP membership; /sync-status shows your account sync status. Free Member is granted automatically after Discord Rules Screening. For help, visit ${this.config.DISCORD_SUPPORT_URL} or open a support ticket. Commands cannot grant roles.`;
     else {
       const account = (
         await this.pool.query<{ user_id: string }>(
