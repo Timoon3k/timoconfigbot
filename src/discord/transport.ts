@@ -9,6 +9,7 @@ import {
 } from "./rest.js";
 import { DiscordFailure } from "./types.js";
 import { assertRole } from "./policy.js";
+import { assertProductionReadOnlyCommandRegistration } from "./command-policy.js";
 
 /** Shared across processes and all guild REST routes: deliberately conservative. */
 export class PostgresDiscordRateGate {
@@ -68,7 +69,7 @@ export class ApprovedDiscordHttpsTransport implements HttpTransport {
     const guild = this.config.DISCORD_GUILD_ID;
     const commands = `/api/v10/applications/${this.config.DISCORD_CLIENT_ID}/guilds/${guild}/commands`;
     const allowed =
-      (path === commands && this.config.DISCORD_COMMANDS_ENABLED) ||
+      (path === commands && (this.config.DISCORD_COMMANDS_ENABLED || this.config.DISCORD_READONLY_COMMANDS_ENABLED)) ||
       path === "/api/v10/oauth2/token" ||
       path === "/api/v10/users/@me" ||
       path === "/api/v10/gateway/bot" ||
@@ -81,11 +82,17 @@ export class ApprovedDiscordHttpsTransport implements HttpTransport {
     if (!allowed) throw new DiscordFailure("DISCORD_ROUTE_NOT_ALLOWED");
     if (
       path === commands &&
-      (!this.config.DISCORD_COMMANDS_ENABLED || init.method !== "PUT")
+      (!(this.config.DISCORD_COMMANDS_ENABLED || this.config.DISCORD_READONLY_COMMANDS_ENABLED) || init.method !== "PUT")
     )
       throw new DiscordFailure("DISCORD_ROUTE_NOT_ALLOWED");
     if (init.method !== "GET" && path !== "/api/v10/oauth2/token") {
-      if (this.config.DISCORD_DRY_RUN || !this.config.DISCORD_WRITES_ENABLED)
+      // Command registration changes Discord's command definitions, not member roles.
+      // Production command permission is deliberately independent from live role writes.
+      if (path === commands) {
+        if (this.config.DISCORD_ENVIRONMENT === "production")
+          assertProductionReadOnlyCommandRegistration(this.config);
+        else assertTestGuildWrites(this.config);
+      } else if (this.config.DISCORD_DRY_RUN || !this.config.DISCORD_WRITES_ENABLED)
         throw new DiscordFailure("LIVE_MUTATIONS_NOT_APPROVED");
       const role = path.match(/\/roles\/([0-9]{17,20})$/)?.[1];
       if (
@@ -101,7 +108,7 @@ export class ApprovedDiscordHttpsTransport implements HttpTransport {
           role === this.config.DISCORD_FREE_MEMBER_ROLE_ID
         )
           throw new DiscordFailure("FREE_MEMBER_REMOVAL_FORBIDDEN");
-      } else assertTestGuildWrites(this.config);
+      } else if (path !== commands) assertTestGuildWrites(this.config);
     }
     await delay(await this.gate.reserve());
     let response: Response;
