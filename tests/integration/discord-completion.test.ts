@@ -148,6 +148,8 @@ function liveFixture(production = false) {
           DISCORD_PRODUCTION_GUILD_ID: "900000000000000001",
           DISCORD_VIP_SYNC_ENABLED: "false",
           DISCORD_FREE_MEMBER_WRITES_APPROVED: "true",
+          DISCORD_FREE_MEMBER_ROLLOUT_MODE: "canary",
+          DISCORD_FREE_MEMBER_CANARY_IDS: memberId,
           DISCORD_FREE_MEMBER_APPROVAL_REFERENCE:
             "fixture-free-member-approval",
           DISCORD_OAUTH_REDIRECT_URI:
