@@ -139,6 +139,11 @@ const schema = z
         code: "custom",
         message: "Production writes require a restricted canary or a separate, documented approval for all members.",
       });
+    if (config.DISCORD_ENVIRONMENT !== "production" && config.DISCORD_READONLY_COMMANDS_ENABLED)
+      ctx.addIssue({
+        code: "custom",
+        message: "The separate read-only command flag is reserved for production.",
+      });
     if (
       config.DISCORD_ENVIRONMENT === "production" &&
       config.DISCORD_READONLY_COMMANDS_ENABLED &&
