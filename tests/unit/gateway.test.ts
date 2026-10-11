@@ -98,10 +98,11 @@ describe("Gateway session boundaries", () => {
 
 describe("Ticket Tool passive channel observation", () => {
   const guild = "200000000000000010";
-  const parent = "1557857668964687913";
+  const parent = "200000000000000011";
   const allowed = loadDiscordConfig({
     TICKET_TOOL_CHANNEL_OBSERVATION_ENABLED: "true",
     TICKET_TOOL_DISCORD_CATEGORY_IDS: parent,
+    TICKET_TOOL_SUPPORT_DISCORD_CATEGORY_ID: "1557857668964687913",
     DISCORD_GUILD_ID: guild,
   });
   it("records only channels from an explicitly allowed Discord text category", async () => {
@@ -125,6 +126,16 @@ describe("Ticket Tool passive channel observation", () => {
     expect(() => loadDiscordConfig({
       TICKET_TOOL_CHANNEL_OBSERVATION_ENABLED: "true",
       TICKET_TOOL_DISCORD_CATEGORY_IDS: "not-an-id",
+      TICKET_TOOL_SUPPORT_DISCORD_CATEGORY_ID: "1557857668964687913",
+    })).toThrow();
+    expect(() => loadDiscordConfig({
+      TICKET_TOOL_CHANNEL_OBSERVATION_ENABLED: "true",
+      TICKET_TOOL_DISCORD_CATEGORY_IDS: "1557857668964687913",
+      TICKET_TOOL_SUPPORT_DISCORD_CATEGORY_ID: "1557857668964687913",
+    })).toThrow();
+    expect(() => loadDiscordConfig({
+      TICKET_TOOL_CHANNEL_OBSERVATION_ENABLED: "true",
+      TICKET_TOOL_DISCORD_CATEGORY_IDS: parent,
     })).toThrow();
   });
 });
