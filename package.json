@@ -28,7 +28,9 @@
     "discord:cron": "node dist/discord/cron-cli.js",
     "db:migrate:built": "node dist/db/cli.js up",
     "test:hostinger-smoke": "node scripts/smoke-hostinger.mjs",
-    "start:api": "node dist/server.js"
+    "start:api": "node dist/server.js",
+    "discord:ticket-audit": "tsx src/tickets/permission-audit-cli.ts",
+    "discord:ticket-audit:built": "node dist/tickets/permission-audit-cli.js"
   },
   "engines": {
     "node": ">=22.13.0"

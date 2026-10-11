@@ -4,6 +4,7 @@ import type { DatabasePool } from "../db/pool.js";
 import type { MembershipService } from "../membership/service.js";
 import { snowflake, type DiscordConfig } from "./config.js";
 import { DiscordFailure } from "./types.js";
+import type { TicketService } from "../tickets/service.js";
 
 export const slashCommands = [
   {
@@ -32,7 +33,22 @@ export class DiscordCommands {
     private readonly pool: DatabasePool,
     private readonly memberships: MembershipService,
     private readonly config: DiscordConfig,
+    private readonly tickets?: TicketService,
   ) {}
+  public async handleTicket(input: Parameters<TicketService["select"]>[0]) {
+    if (!this.tickets) throw new DiscordFailure("TICKET_SELECTIONS_NOT_ENABLED");
+    // Initial ephemeral reply stays below Discord's three-second deadline even if REST stalls.
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    try {
+      return await Promise.race([
+        this.tickets.select(input),
+        new Promise<{ type: number; data: { flags: number; content: string } }>(resolve => {
+          timer = setTimeout(() => resolve({ type: 4, data: { flags: 64,
+            content: "Verification is taking longer than expected. Please try again. Payments are disabled; no charge or VIP access has been created." } }), 1800);
+        }),
+      ]);
+    } finally { clearTimeout(timer); }
+  }
   public async handle(guildId: string, discordId: string, command: string) {
     if (guildId !== this.config.DISCORD_GUILD_ID)
       throw new DiscordFailure("GUILD_IDENTITY_MISMATCH");
@@ -122,19 +138,31 @@ export async function verifiedInteraction(
     .object({
       type: z.number().int(),
       application_id: snowflake,
+      id: snowflake.optional(),
       guild_id: snowflake.optional(),
+      channel_id: snowflake.optional(),
+      message: z.object({ id: snowflake, author: z.object({ id: snowflake }) }).optional(),
       member: z.object({ user: z.object({ id: snowflake }) }).optional(),
-      data: z.object({ name: z.string() }).optional(),
+      data: z.object({ name: z.string().optional(), custom_id: z.string().max(100).optional() }).optional(),
     })
     .parse(JSON.parse(raw.toString("utf8")));
   if (interaction.application_id !== applicationId)
     throw new DiscordFailure("APPLICATION_IDENTITY_MISMATCH");
   if (interaction.type === 1) return { type: 1 };
+  if (interaction.type === 3) {
+    if (!interaction.id || !interaction.guild_id || !interaction.channel_id ||
+        !interaction.member || !interaction.message || !interaction.data?.custom_id ||
+        interaction.message.author.id !== applicationId)
+      throw new DiscordFailure("TICKET_INTERACTION_INVALID");
+    return commands.handleTicket({ interactionId: interaction.id, guildId: interaction.guild_id,
+      channelId: interaction.channel_id, memberId: interaction.member.user.id,
+      messageId: interaction.message.id, customId: interaction.data.custom_id });
+  }
   if (
     interaction.type !== 2 ||
     !interaction.guild_id ||
     !interaction.member ||
-    !interaction.data
+    !interaction.data?.name
   )
     throw new DiscordFailure("INTERACTION_INVALID");
   return commands.handle(

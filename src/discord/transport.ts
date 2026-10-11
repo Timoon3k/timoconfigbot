@@ -5,10 +5,12 @@ import type { DiscordConfig } from "./config.js";
 import {
   assertTestGuildNetwork,
   assertTestGuildWrites,
+  discordResponse,
   type HttpTransport,
 } from "./rest.js";
 import { DiscordFailure } from "./types.js";
 import { assertRole } from "./policy.js";
+import { channelSchema, VIEW } from "../tickets/permissions.js";
 
 /** Shared across processes and all guild REST routes: deliberately conservative. */
 export class PostgresDiscordRateGate {
@@ -68,6 +70,11 @@ export class ApprovedDiscordHttpsTransport implements HttpTransport {
     const guild = this.config.DISCORD_GUILD_ID;
     const commands = `/api/v10/applications/${this.config.DISCORD_CLIENT_ID}/guilds/${guild}/commands`;
     const allowed =
+      (init.method === "GET" && this.config.TICKET_TOOL_CHANNEL_OBSERVATION_ENABLED &&
+        (path === `/api/v10/guilds/${guild}/channels` ||
+         /^\/api\/v10\/channels\/[0-9]{17,20}(?:\/messages\?limit=100(?:&before=[0-9]{17,20})?)?$/.test(path))) ||
+      (init.method === "POST" && this.config.TICKET_TOOL_WELCOME_WRITES_ENABLED &&
+        Boolean(this.config.TICKET_TOOL_WELCOME_APPROVAL_REFERENCE) && /^\/api\/v10\/channels\/[0-9]{17,20}\/messages$/.test(path)) ||
       (path === commands && this.config.DISCORD_COMMANDS_ENABLED) ||
       path === "/api/v10/oauth2/token" ||
       path === "/api/v10/users/@me" ||
@@ -84,7 +91,21 @@ export class ApprovedDiscordHttpsTransport implements HttpTransport {
       (!this.config.DISCORD_COMMANDS_ENABLED || init.method !== "PUT")
     )
       throw new DiscordFailure("DISCORD_ROUTE_NOT_ALLOWED");
-    if (init.method !== "GET" && path !== "/api/v10/oauth2/token") {
+    const ticketMessage = init.method === "POST" && /^\/api\/v10\/channels\/[0-9]{17,20}\/messages$/.test(path);
+    if (ticketMessage) {
+      const id = path.split("/")[4]!;
+      const channel = channelSchema.parse(await discordResponse(await this.request(`/api/v10/channels/${id}`, { method: "GET", headers: init.headers })));
+      const everyone = channel.permission_overwrites.find(o => o.type === 0 && o.id === guild);
+      if (channel.id !== id || channel.guild_id !== guild || channel.type !== 0 ||
+          channel.parent_id === this.config.TICKET_TOOL_SUPPORT_DISCORD_CATEGORY_ID ||
+          !channel.parent_id || !this.config.TICKET_TOOL_DISCORD_CATEGORY_IDS.includes(channel.parent_id) ||
+          !everyone || !(BigInt(everyone.deny) & VIEW) || (BigInt(everyone.allow) & VIEW))
+        throw new DiscordFailure("VIP_TICKET_SCOPE_INVALID");
+      const customers = [this.config.DISCORD_FREE_MEMBER_ROLE_ID, this.config.DISCORD_VIP_MONTHLY_ROLE_ID, this.config.DISCORD_VIP_LIFETIME_ROLE_ID];
+      if (channel.permission_overwrites.some(o => o.type === 0 && customers.includes(o.id) && (BigInt(o.allow) & VIEW)))
+        throw new DiscordFailure("VIP_TICKET_CUSTOMER_ROLE_VISIBLE");
+    }
+    if (init.method !== "GET" && path !== "/api/v10/oauth2/token" && !ticketMessage) {
       if (this.config.DISCORD_DRY_RUN || !this.config.DISCORD_WRITES_ENABLED)
         throw new DiscordFailure("LIVE_MUTATIONS_NOT_APPROVED");
       const role = path.match(/\/roles\/([0-9]{17,20})$/)?.[1];

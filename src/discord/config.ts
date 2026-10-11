@@ -34,6 +34,11 @@ const schema = z
     DISCORD_GATEWAY_ENABLED: flag("false"),
     // Passive Ticket Tool channel detection: never sends a message or grants roles.
     TICKET_TOOL_CHANNEL_OBSERVATION_ENABLED: flag("false"),
+    TICKET_TOOL_BOT_ID: snowflake.optional(),
+    TICKET_TOOL_WELCOME_WRITES_ENABLED: flag("false"),
+    TICKET_TOOL_WELCOME_APPROVAL_REFERENCE: z.string().trim().min(8).max(200).optional(),
+    TICKET_TOOL_WELCOME_NOT_BEFORE: z.string().datetime({ offset: true }).optional(),
+    TICKET_TOOL_SELECTIONS_ENABLED: flag("false"),
     // Existing general-support Discord category; it must never trigger VIP checkout.
     TICKET_TOOL_SUPPORT_DISCORD_CATEGORY_ID: snowflake.optional(),
     TICKET_TOOL_DISCORD_CATEGORY_IDS: z.string().default("").transform((value) =>
@@ -101,6 +106,22 @@ const schema = z
       .default(250),
   })
   .superRefine((config, ctx) => {
+    if (config.TICKET_TOOL_WELCOME_WRITES_ENABLED &&
+        (!config.TICKET_TOOL_WELCOME_NOT_BEFORE || Date.parse(config.TICKET_TOOL_WELCOME_NOT_BEFORE) < 1420070400000))
+      ctx.addIssue({ code: "custom", message: "Ticket writes require an explicit rollout timestamp after the Discord epoch; older tickets are never messaged automatically." });
+    if (config.DISCORD_ENVIRONMENT === "production" && config.TICKET_TOOL_CHANNEL_OBSERVATION_ENABLED &&
+        (config.DISCORD_GUILD_ID !== "1557854161805115402" ||
+         config.TICKET_TOOL_SUPPORT_DISCORD_CATEGORY_ID !== "1557857668964687913" ||
+         config.TICKET_TOOL_DISCORD_CATEGORY_IDS.join(",") !== "1558892807786209360"))
+      ctx.addIssue({ code: "custom", message: "Production ticket observation is restricted to the approved VIP Orders category and guild." });
+    if ((config.TICKET_TOOL_WELCOME_WRITES_ENABLED || config.TICKET_TOOL_SELECTIONS_ENABLED) &&
+        (!config.TICKET_TOOL_CHANNEL_OBSERVATION_ENABLED || !config.TICKET_TOOL_BOT_ID ||
+         config.TICKET_TOOL_BOT_ID === config.DISCORD_CLIENT_ID ||
+         config.TICKET_TOOL_DISCORD_CATEGORY_IDS.length !== 1 ||
+         !config.TICKET_TOOL_WELCOME_APPROVAL_REFERENCE ||
+         [config.DISCORD_APPROVAL_REFERENCE, config.DISCORD_FREE_MEMBER_APPROVAL_REFERENCE].includes(config.TICKET_TOOL_WELCOME_APPROVAL_REFERENCE) ||
+         config.DISCORD_ENVIRONMENT === "offline"))
+      ctx.addIssue({ code: "custom", message: "Ticket messages and selections require a single category, observation, distinct bot identity and separate owner approval." });
     const ids = [
       config.DISCORD_GUILD_ID,
       config.DISCORD_CLIENT_ID,
@@ -257,6 +278,10 @@ export function loadDiscordConfig(
     "DISCORD_FREE_MEMBER_ALL_APPROVAL_REFERENCE",
     "DISCORD_GUILD_OWNER_ID",
     "DISCORD_APPROVAL_REFERENCE",
+    "TICKET_TOOL_BOT_ID",
+    "TICKET_TOOL_WELCOME_APPROVAL_REFERENCE",
+    "TICKET_TOOL_WELCOME_NOT_BEFORE",
+    "TICKET_TOOL_SUPPORT_DISCORD_CATEGORY_ID",
   ])
     if (normalized[key] === "") delete normalized[key];
   const config = schema.parse(normalized);
