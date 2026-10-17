@@ -15,7 +15,8 @@ import { RestDiscordAdapter } from "./rest.js";
 import { MemberVerification } from "./verification.js";
 import { DiscordMemberGateway, checkGatewaySessionBudget } from "./gateway.js";
 import { DiscordFailure } from "./types.js";
-import type { TicketChannel } from "../tickets/ticket-tool-bridge.js";
+import { TicketRest } from "../tickets/rest.js";
+import { TicketService } from "../tickets/service.js";
 import { MockOAuthProvider, RestOAuthProvider } from "./oauth-provider.js";
 import { DiscordSyncService } from "./sync.js";
 
@@ -57,17 +58,9 @@ export function createDiscordRuntime(
     secret,
   );
   const verification = new MemberVerification(pool, config, adapter, sync);
+  const tickets = new TicketService(pool, config, new TicketRest(config, env.DISCORD_BOT_TOKEN ?? "", transport));
   const onTicketChannelCreated = config.TICKET_TOOL_CHANNEL_OBSERVATION_ENABLED
-    ? async (channel: TicketChannel): Promise<void> => {
-        // Persist a candidate ticket channel only. No inferred buyer, payment or role.
-        await pool.query(
-          `INSERT INTO discord_ticket_channels
-             (guild_id,channel_id,discord_category_id,source)
-           VALUES ($1,$2,$3,'gateway')
-           ON CONFLICT (guild_id,channel_id) DO NOTHING`,
-          [channel.guild_id, channel.id, channel.parent_id],
-        );
-      }
+    ? tickets.observe.bind(tickets)
     : undefined;
   const gateway = config.DISCORD_GATEWAY_ENABLED
     ? new DiscordMemberGateway(
@@ -80,5 +73,5 @@ export function createDiscordRuntime(
         onTicketChannelCreated,
       )
     : null;
-  return { sync, links, verification, gateway };
+  return { sync, links, verification, gateway, tickets };
 }

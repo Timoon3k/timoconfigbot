@@ -10,7 +10,6 @@ describe("DiscordWorker error diagnostics", () => {
       return true;
     });
     try {
-      let worker: DiscordWorker;
       const sync = {
         config: {
           DISCORD_GUILD_ID: "900000000000000001",
@@ -25,7 +24,7 @@ describe("DiscordWorker error diagnostics", () => {
         }),
         runOne: vi.fn(),
       } as unknown as DiscordSyncService;
-      worker = new DiscordWorker(sync);
+      const worker = new DiscordWorker(sync);
       await worker.run();
       const errors = output.filter((line) => line.includes('"event":"discord_worker_tick_failed"'));
       expect(errors).toHaveLength(1);

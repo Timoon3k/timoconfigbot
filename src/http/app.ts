@@ -9,6 +9,7 @@ import { DiscordFailure } from "../discord/types.js";
 import type { DiscordSyncService } from "../discord/sync.js";
 import type { DiscordLinkService } from "../discord/oauth.js";
 import { registerDiscordRoutes } from "../discord/http.js";
+import type { TicketService } from "../tickets/service.js";
 
 const credentialsSchema = z.object({
   email: z.string().email().max(320),
@@ -26,7 +27,7 @@ export function buildApp(dependencies: {
   memberships: MembershipService;
   production: boolean;
   readiness?: () => Promise<{ ready: boolean; state: string; gateway: string }>;
-  discord?: { sync: DiscordSyncService; links: DiscordLinkService };
+  discord?: { sync: DiscordSyncService; links: DiscordLinkService; tickets?: TicketService };
 }): FastifyInstance {
   const app = Fastify({
     logger: false,
@@ -181,6 +182,7 @@ export function buildApp(dependencies: {
       dependencies.discord.sync,
       dependencies.discord.links,
       dependencies.readiness,
+      dependencies.discord.tickets,
     );
   return app;
 }

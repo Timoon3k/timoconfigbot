@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { setTimeout as delay } from "node:timers/promises";
 import type { MemberVerification } from "./verification.js";
 import type { DiscordSyncService } from "./sync.js";
+import type { TicketService } from "../tickets/service.js";
 
 export class DiscordWorker {
   public lastCompletedAt: number | null = null;
@@ -51,6 +52,7 @@ export class DiscordWorker {
   public constructor(
     private readonly sync: DiscordSyncService,
     private readonly verification?: MemberVerification,
+    private readonly tickets?: TicketService,
   ) {}
   public stop(): void {
     this.stopping = true;
@@ -85,6 +87,15 @@ export class DiscordWorker {
       const synced = await this.sync.runOne(this.id);
       if (!verified && !synced) break;
       count += Number(verified) + Number(synced);
+    }
+    // Ticket errors must never interrupt the existing Free Member loop or readiness.
+    try {
+      this.stage = "ticket_reconcile";
+      await this.tickets?.reconcileBatch();
+      this.stage = "ticket_message";
+      count += Number((await this.tickets?.runOne()) ?? false);
+    } catch (error) {
+      this.reportTickFailure(error);
     }
     this.lastCompletedAt = Date.now();
     this.stage = "idle";
